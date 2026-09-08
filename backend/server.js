@@ -17,9 +17,12 @@ const db = new sqlite3.Database('./satellite_bridge.db', (err) => {
 });
 
 db.serialize(() => {
+    // For development: reset schema to ensure columns match current code
+    db.run("DROP TABLE IF EXISTS detected_population");
+    db.run("DROP TABLE IF EXISTS reference_population");
+
     // 1. Reference Population Table (The "Source of Truth")
-    // Added is_cleared and cleared_at for manual evacuation details
-    db.run(`CREATE TABLE IF NOT EXISTS reference_population (
+    db.run(`CREATE TABLE reference_population (
         sector_id TEXT PRIMARY KEY,
         sector_name TEXT,
         total_expected INTEGER,
@@ -28,7 +31,7 @@ db.serialize(() => {
     )`);
 
     // 2. Real-time Detection Table (Tracking by Drones)
-    db.run(`CREATE TABLE IF NOT EXISTS detected_population (
+    db.run(`CREATE TABLE detected_population (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sector_id TEXT,
         count INTEGER,
@@ -37,18 +40,14 @@ db.serialize(() => {
         FOREIGN KEY(sector_id) REFERENCES reference_population(sector_id)
     )`);
 
-    // Seed reference data if empty
-    db.get("SELECT count(*) as count FROM reference_population", (err, row) => {
-        if (row.count === 0) {
-            const stmt = db.prepare("INSERT INTO reference_population (sector_id, sector_name, total_expected) VALUES (?, ?, ?)");
-            stmt.run('SEC-A', 'North Residential', 150);
-            stmt.run('SEC-B', 'Industrial Zone', 45);
-            stmt.run('SEC-C', 'Central Market', 300);
-            stmt.run('SEC-D', 'South Waterfront', 80);
-            stmt.finalize();
-            console.log('Reference population data seeded.');
-        }
-    });
+    // Seed reference data
+    const stmt = db.prepare("INSERT INTO reference_population (sector_id, sector_name, total_expected) VALUES (?, ?, ?)");
+    stmt.run('SEC-A', 'North Residential', 150);
+    stmt.run('SEC-B', 'Industrial Zone', 45);
+    stmt.run('SEC-C', 'Central Market', 300);
+    stmt.run('SEC-D', 'South Waterfront', 80);
+    stmt.finalize();
+    console.log('Reference population data seeded successfully.');
 });
 
 // --- API Endpoints ---
@@ -108,5 +107,5 @@ app.get('/api/telemetry', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`\n🚀 Satellite Bridge Backend running at http://localhost:${PORT}`);
-    console.log(`📊 Population DB enabled. Evacuation API live at /api/evacuation-status`);
+    console.log(`📊 Population DB reset & seeded. Evacuation API live at /api/evacuation-status`);
 });
