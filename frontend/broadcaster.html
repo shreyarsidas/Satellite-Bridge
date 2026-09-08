@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ground Team - Broadcaster</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; background: #2f3640; color: white; font-family: 'Inter', sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { background: #c0392b; padding: 15px; text-align: center; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        video { flex: 1; width: 100%; object-fit: cover; background: #000; }
+        .controls { padding: 20px; display: flex; justify-content: center; background: #1e272e; }
+        button { background: #27ae60; color: white; border: none; padding: 16px 32px; border-radius: 8px; font-size: 16px; font-weight: bold; width: 100%; max-width: 300px; cursor: pointer; }
+        button:active { background: #2ecc71; }
+        button.streaming { background: #e74c3c; }
+    </style>
+</head>
+<body>
+
+    <header id="status">Satellite Bridge - Ready</header>
+    <video id="video" autoplay playsinline muted></video>
+    
+    <div class="controls">
+        <button id="start-btn">TURN ON CAMERA</button>
+    </div>
+
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script>
+        const video = document.getElementById("video");
+        const btn = document.getElementById("start-btn");
+        const status = document.getElementById("status");
+        
+        let localStream;
+        let peer;
+
+        btn.addEventListener("click", () => {
+            if (localStream) return window.location.reload(); 
+            
+            status.textContent = "ACCESSING CAMERA...";
+            
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+            .then(stream => {
+                localStream = stream;
+                video.srcObject = stream;
+                
+                status.textContent = "CONNECTING TO HQ...";
+                
+                peer = new Peer(); 
+                
+                peer.on('open', () => {
+                    const call = peer.call('satellite-mission-control-hq-001', localStream);
+                    
+                    status.textContent = "🔴 TRANSMITTING SECURE FEED";
+                    btn.textContent = "STOP TRANSMITTING";
+                    btn.classList.add("streaming");
+                });
+
+                peer.on('error', (err) => {
+                    status.textContent = "ERROR CONNECTING";
+                    alert("Connection failed. Make sure the dashboard is open and you clicked 'Live Feed' first.");
+                });
+            })
+            .catch(err => {
+                status.textContent = "CAMERA DENIED";
+                alert("Camera access denied or failed: " + err);
+            });
+        });
+    </script>
+</body>
+</html>
