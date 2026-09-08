@@ -1,16 +1,16 @@
 /* =========================================================================
-   SATELLITE BRIDGE — ANALYTICS & POPULATION TRACKING (V20)
+   SATELLITE BRIDGE — ANALYTICS EXTENSION & LIVE FEED
    ========================================================================= */
 
 const DISASTERS = {
-  fire: { label: 'Wildfire', icon: '🔥', color: '#c0392b', priority: 0, popWeight: 1.5 },
-  chemical: { label: 'Chemical Leak', icon: '☢️', color: '#27ae60', priority: 0, popWeight: 0.5 },
-  bio: { label: 'Biohazard', icon: '☣️', color: '#8e44ad', priority: 0, popWeight: 0.8 },
-  flood: { label: 'Flooding', icon: '🌊', color: '#3498db', priority: 1, popWeight: 1.2 },
-  quake: { label: 'Earthquake', icon: '🌍', color: '#f1c40f', priority: 1, popWeight: 1.8 },
-  gas: { label: 'Gas Leak', icon: '💨', color: '#f39c12', priority: 1, popWeight: 0.6 },
-  structural: { label: 'Collapse', icon: '🏚️', color: '#d35400', priority: 1, popWeight: 1.0 },
-  storm: { label: 'Cyclone', icon: '🌪️', color: '#7f8c8d', priority: 2, popWeight: 1.1 },
+  fire: { label: 'Wildfire', icon: '🔥', color: '#c0392b', priority: 0 },
+  flood: { label: 'Flooding', icon: '🌊', color: '#3498db', priority: 1 },
+  quake: { label: 'Earthquake', icon: '🌍', color: '#f1c40f', priority: 1 },
+  storm: { label: 'Cyclone', icon: '🌪️', color: '#7f8c8d', priority: 2 },
+  chemical: { label: 'Chemical Leak', icon: '☢️', color: '#27ae60', priority: 0 },
+  bio: { label: 'Biohazard', icon: '☣️', color: '#8e44ad', priority: 0 },
+  gas: { label: 'Gas Leak', icon: '💨', color: '#f39c12', priority: 1 },
+  structural: { label: 'Collapse', icon: '🏚️', color: '#d35400', priority: 1 },
 };
 
 const EVENT_TYPES = {
@@ -20,17 +20,9 @@ const EVENT_TYPES = {
   animal: { label: 'ANIMAL_DETECTED', icon: '🦌', priority: 2 },
 };
 
-const SECTORS = [
-  { id: 'SEC-A', name: 'North Residential', lat: 12.9750, lon: 80.2200 },
-  { id: 'SEC-B', name: 'Industrial Zone', lat: 12.9700, lon: 80.2250 },
-  { id: 'SEC-C', name: 'Central Market', lat: 12.9720, lon: 80.2220 },
-  { id: 'SEC-D', name: 'South Waterfront', lat: 12.9680, lon: 80.2200 },
-];
-
 const HOME = { lat: 12.9716, lon: 80.2209 };
 const DEAD_ZONE = { lat: 12.9755, lon: 80.2255, radiusM: 900 };
 const DETECTION_RANGE = 5000; 
-const API_BASE = 'http://localhost:3000/api';
 
 let map, deadZoneCircle;
 let drones = [];
@@ -83,7 +75,6 @@ function init() {
   selectedDroneId = drones[0].id;
   updateDroneSelect();
   setInterval(tick, 100);
-  setInterval(updateEvacuationUI, 3000);
 }
 
 function initMap() {
@@ -149,7 +140,7 @@ function setupDragAndDrop() {
     
     marker.bindPopup(`
       <div style="text-align:center; font-family:var(--font-mono); color:#000; padding:5px;">
-        <b style="display:block; margin-bottom:8px;">${disasterData.label} (P${disasterData.priority})</b>
+        <b style="display:block; margin-bottom:8px;">${disasterData.label}</b>
         <button onclick="solveDisaster('${marker._leaflet_id}')" class="popup-solve-btn">MARK SOLVED</button>
       </div>`);
     activeDisasters.push({ id: marker._leaflet_id, marker: marker });
@@ -207,40 +198,6 @@ function logEvent(msg, type) {
   feed.prepend(item);
 }
 
-async function sendDetectionToServer(sector_id, count, drone_id) {
-  try {
-    await fetch(`${API_BASE}/detection`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sector_id, count, drone_id })
-    });
-  } catch (e) {
-    console.error('DB Error:', e);
-  }
-}
-
-async function updateEvacuationUI() {
-  try {
-    const res = await fetch(`${API_BASE}/evacuation-status`);
-    const data = await res.json();
-    const body = document.getElementById('evac-body');
-    body.innerHTML = data.map(row => {
-      const pct = Math.round((row.total_detected / row.total_expected) * 100) || 0;
-      const status = pct >= 100 ? '✅ CLEAR' : `⏳ ${pct}%`;
-      return `
-        <tr style="border-bottom:1px solid var(--border-color);">
-          <td style="padding:8px">${row.sector_name}</td>
-          <td style="padding:8px">${row.total_expected}</td>
-          <td style="padding:8px">${row.total_detected}</td>
-          <td style="padding:8px; font-weight:bold; color:${pct >= 100 ? 'var(--accent-green)' : 'var(--accent-crit)'}">${status}</td>
-        </tr>
-      `;
-    }).join('');
-  } catch (e) {
-    console.error('Evac UI Error:', e);
-  }
-}
-
 function checkDetections(type, data, coords) {
   const detectingDrones = drones.map(d => {
     const dist = map.distance([d.lat, d.lon], [coords.lat, coords.lng]);
@@ -250,12 +207,13 @@ function checkDetections(type, data, coords) {
   if (detectingDrones.length > 0) {
     detectingDrones.sort((a, b) => a.distance - b.distance);
     const closestDrone = detectingDrones[0].drone;
+    const firstDetector = detectingDrones[Math.floor(Math.random() * detectingDrones.length)].drone;
     
     let confidence = 0.85 + (detectingDrones.length * 0.03);
     confidence = Math.min(confidence, 0.99).toFixed(2);
     
-    // IMPORTANT: Closest drone determines the population count
-    triggerDetection(closestDrone.id, type, data, coords, detectingDrones.length, closestDrone.id);
+    const primaryDroneId = firstDetector.id;
+    triggerDetection(primaryDroneId, type, data, coords, detectingDrones.length, closestDrone.id, firstDetector.id);
   }
 }
 
@@ -280,13 +238,13 @@ function updateSnapshot(data, conf) {
   };
 }
 
-function triggerDetection(closestDroneId, typeKey, data, coords, droneCount, reporterId) {
+function triggerDetection(droneId, typeKey, data, coords, droneCount, closestId, firstId) {
   const conf = (0.85 + (droneCount * 0.03)).toFixed(2);
   const ts = new Date().toLocaleTimeString();
   const event = {
-    droneId: closestDroneId, type: data.label, icon: data.icon, priority: data.priority,
+    droneId, type: data.label, icon: data.icon, priority: data.priority,
     conf: conf, lat: coords.lat.toFixed(4), lon: coords.lng.toFixed(4),
-    ts: ts, closestDrone: closestDroneId, firstDetector: closestDroneId, droneCount: droneCount
+    ts: ts, closestDrone: closestId, firstDetector: firstId, droneCount: droneCount
   };
   
   lastDetectedEvent = event;
@@ -298,34 +256,22 @@ function triggerDetection(closestDroneId, typeKey, data, coords, droneCount, rep
   const feed = document.getElementById('alert-feed');
   const item = document.createElement('div');
   item.className = `event-item ${data.priority === 0 ? 'crit' : ''}`;
-  const reporterText = droneCount > 1 ? `${closestDroneId} (+${droneCount-1} others)` : closestDroneId;
-  item.innerHTML = `<b>${data.icon} ${data.label} (P${data.priority})</b> · ${reporterText}<br/><span style="font-size:10px; opacity:0.7">${ts} · Conf: ${conf}</span>`;
+  const reporterText = droneCount > 1 ? `${droneId} (+${droneCount-1} others)` : droneId;
+  item.innerHTML = `<b>${data.icon} ${data.label}</b> · ${reporterText}<br/><span style="font-size:10px; opacity:0.7">${ts} · Conf: ${conf}</span>`;
   feed.prepend(item);
   const hist = document.getElementById('tab-history');
   const hItem = document.createElement('div');
   hItem.className = 'event-item';
-  hItem.innerHTML = `<b>${ts} [P${data.priority}]</b>: ${data.label} detected by ${reporterText} via SATELLITE`;
+  hItem.innerHTML = `<b>${ts}</b>: ${data.label} detected by ${reporterText} via SATELLITE`;
   hist.prepend(hItem);
-  logEvent(`ALERT [P${data.priority}]: ${data.label} detected by ${reporterText}`, 'crit');
-
-  // Population Tracking Logic: Closest drone determines population
-  const estimatedPeople = Math.floor((Math.random() * 20 + 5) * (data.popWeight || 1.0));
-  const nearestSector = SECTORS.reduce((prev, curr) => {
-      const distPrev = map.distance([prev.lat, prev.lon], [coords.lat, coords.lng]);
-      const distCurr = map.distance([curr.lat, curr.lon], [coords.lat, coords.lng]);
-      return distPrev < distCurr ? prev : curr;
-  });
-  sendDetectionToServer(nearestSector.id, estimatedPeople, closestDroneId);
+  logEvent(`ALERT: ${data.label} detected by ${reporterText}`, 'crit');
 }
 
 function updateQueueUI() {
   const list = document.getElementById('queue-list');
-  // Sort queue by priority (0 is highest)
-  const sortedOutbox = [...outbox].sort((a, b) => a.priority - b.priority);
-  
-  list.innerHTML = sortedOutbox.slice(-10).reverse().map(m => `
+  list.innerHTML = outbox.slice(-10).reverse().map(m => `
     <div class="event-item" style="font-size:11px; margin-bottom:4px; border-left-color:var(--accent-primary)">
-      <span style="color:var(--accent-crit); font-weight:bold">P${m.priority}</span> ${m.droneId}: ${m.type} → SATELLITE
+      <span style="color:var(--accent-primary)">P${m.priority}</span> ${m.droneId}: ${m.type} → SATELLITE
     </div>
   `).join('');
 }
@@ -562,3 +508,43 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 init();
+
+/* =========================================================================
+   LIVE CAMERA FEED INTEGRATION (PeerJS Receiver)
+   ========================================================================= */
+const videoContainer = document.getElementById("live-video-container");
+const liveVideo = document.getElementById("live-video");
+let peer; 
+
+document.getElementById("live-feed-btn").addEventListener("click", () => {
+    videoContainer.style.display = "block";
+    
+    if (!peer) {
+        logEvent("Initializing secure feed receiver...", "info");
+        
+        peer = new Peer('satellite-mission-control-hq-001'); 
+        
+        peer.on('open', (id) => {
+            logEvent("Receiver active. Awaiting Ground Team connection.", "info");
+        });
+
+        peer.on('call', (call) => {
+            logEvent("Incoming feed from Ground Team...", "crit");
+            call.answer(); 
+            
+            call.on('stream', (remoteStream) => {
+                liveVideo.srcObject = remoteStream;
+                logEvent("Live feed established successfully.", "crit");
+            });
+        });
+        
+        peer.on('error', (err) => {
+            console.error(err);
+            logEvent("Feed Error: " + err.type, "crit");
+        });
+    }
+});
+
+document.getElementById("close-video").addEventListener("click", () => {
+    videoContainer.style.display = "none";
+});
