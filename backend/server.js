@@ -18,10 +18,13 @@ const db = new sqlite3.Database('./satellite_bridge.db', (err) => {
 
 db.serialize(() => {
     // 1. Reference Population Table (The "Source of Truth")
+    // Added is_cleared and cleared_at for manual evacuation details
     db.run(`CREATE TABLE IF NOT EXISTS reference_population (
         sector_id TEXT PRIMARY KEY,
         sector_name TEXT,
-        total_expected INTEGER
+        total_expected INTEGER,
+        is_cleared BOOLEAN DEFAULT 0,
+        cleared_at DATETIME
     )`);
 
     // 2. Real-time Detection Table (Tracking by Drones)
@@ -37,7 +40,7 @@ db.serialize(() => {
     // Seed reference data if empty
     db.get("SELECT count(*) as count FROM reference_population", (err, row) => {
         if (row.count === 0) {
-            const stmt = db.prepare("INSERT INTO reference_population VALUES (?, ?, ?)");
+            const stmt = db.prepare("INSERT INTO reference_population (sector_id, sector_name, total_expected) VALUES (?, ?, ?)");
             stmt.run('SEC-A', 'North Residential', 150);
             stmt.run('SEC-B', 'Industrial Zone', 45);
             stmt.run('SEC-C', 'Central Market', 300);
@@ -64,12 +67,27 @@ app.post('/api/detection', (req, res) => {
     });
 });
 
-// Get Evacuation Status: Compare Reference vs Detected
+// Mark Sector as Cleared: Manual override for ground teams
+app.post('/api/clear-sector', (req, res) => {
+    const { sector_id } = req.body;
+    if (!sector_id) return res.status(400).json({ error: 'Missing sector_id' });
+
+    const sql = `UPDATE reference_population SET is_cleared = 1, cleared_at = CURRENT_TIMESTAMP WHERE sector_id = ?`;
+    db.run(sql, [sector_id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ status: 'success' });
+    });
+});
+
+// Get Evacuation Status: Compare Reference vs Detected + Manual Clearance
 app.get('/api/evacuation-status', (req, res) => {
     const sql = `
         SELECT 
+            r.sector_id,
             r.sector_name, 
             r.total_expected, 
+            r.is_cleared,
+            r.cleared_at,
             IFNULL(SUM(d.count), 0) as total_detected,
             (r.total_expected - IFNULL(SUM(d.count), 0)) as remaining
         FROM reference_population r

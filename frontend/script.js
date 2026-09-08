@@ -1,5 +1,5 @@
 /* =========================================================================
-   SATELLITE BRIDGE — ANALYTICS & POPULATION TRACKING (V20)
+   SATELLITE BRIDGE — ANALYTICS & POPULATION TRACKING (V21)
    ========================================================================= */
 
 const DISASTERS = {
@@ -219,6 +219,22 @@ async function sendDetectionToServer(sector_id, count, drone_id) {
   }
 }
 
+async function clearSector(sector_id) {
+  try {
+    const res = await fetch(`${API_BASE}/clear-sector`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sector_id })
+    });
+    if (res.ok) {
+      logEvent(`Sector ${sector_id} manually marked as cleared by ground command.`, 'info');
+      updateEvacuationUI();
+    }
+  } catch (e) {
+    console.error('Clear Sector Error:', e);
+  }
+}
+
 async function updateEvacuationUI() {
   try {
     const res = await fetch(`${API_BASE}/evacuation-status`);
@@ -226,13 +242,20 @@ async function updateEvacuationUI() {
     const body = document.getElementById('evac-body');
     body.innerHTML = data.map(row => {
       const pct = Math.round((row.total_detected / row.total_expected) * 100) || 0;
-      const status = pct >= 100 ? '✅ CLEAR' : `⏳ ${pct}%`;
+      const isCleared = row.is_cleared === 1;
+      const status = isCleared ? '✅ CLEARED' : (pct >= 100 ? '✅ CLEAR' : `⏳ ${pct}%`);
+      const statusColor = isCleared || pct >= 100 ? 'var(--accent-green)' : 'var(--accent-crit)';
+      const clearedAt = row.cleared_at ? new Date(row.cleared_at).toLocaleTimeString() : '—';
+      const actionBtn = isCleared ? '—' : `<button onclick="clearSector('${row.sector_id}')" style="font-size:10px; padding:2px 4px;">CLEAR</button>`;
+
       return `
         <tr style="border-bottom:1px solid var(--border-color);">
           <td style="padding:8px">${row.sector_name}</td>
           <td style="padding:8px">${row.total_expected}</td>
           <td style="padding:8px">${row.total_detected}</td>
-          <td style="padding:8px; font-weight:bold; color:${pct >= 100 ? 'var(--accent-green)' : 'var(--accent-crit)'}">${status}</td>
+          <td style="padding:8px; font-weight:bold; color:${statusColor}">${status}</td>
+          <td style="padding:8px; color:var(--text-muted)">${clearedAt}</td>
+          <td style="padding:8px">${actionBtn}</td>
         </tr>
       `;
     }).join('');
@@ -254,11 +277,9 @@ function checkDetections(type, data, coords) {
     let confidence = 0.85 + (detectingDrones.length * 0.03);
     confidence = Math.min(confidence, 0.99).toFixed(2);
     
-    // IMPORTANT: Closest drone determines the population count
     triggerDetection(closestDrone.id, type, data, coords, detectingDrones.length, closestDrone.id);
   }
 }
-
 
 function updateSnapshot(data, conf) {
   document.getElementById('snap-icon').textContent = data.icon;
@@ -308,7 +329,6 @@ function triggerDetection(closestDroneId, typeKey, data, coords, droneCount, rep
   hist.prepend(hItem);
   logEvent(`ALERT [P${data.priority}]: ${data.label} detected by ${reporterText}`, 'crit');
 
-  // Population Tracking Logic: Closest drone determines population
   const estimatedPeople = Math.floor((Math.random() * 20 + 5) * (data.popWeight || 1.0));
   const nearestSector = SECTORS.reduce((prev, curr) => {
       const distPrev = map.distance([prev.lat, prev.lon], [coords.lat, coords.lng]);
@@ -320,7 +340,6 @@ function triggerDetection(closestDroneId, typeKey, data, coords, droneCount, rep
 
 function updateQueueUI() {
   const list = document.getElementById('queue-list');
-  // Sort queue by priority (0 is highest)
   const sortedOutbox = [...outbox].sort((a, b) => a.priority - b.priority);
   
   list.innerHTML = sortedOutbox.slice(-10).reverse().map(m => `
@@ -397,7 +416,7 @@ function updateAnalytics() {
           <div class="tel-item"><span class="tel-label">FIRST DETECTOR</span><span class="tel-value">${lastDetectedEvent.firstDetector}</span></div>
           <div class="tel-item"><span class="tel-label">CURRENT CLOSEST</span><span class="tel-value">${currentClosest}</span></div>
           <div class="tel-item"><span class="tel-label">DETECTION TIME</span><span class="tel-value">${lastDetectedEvent.ts}</span></div>
-          <div class="tel-item"><span class="tel-label">CONFIDENCE</span><span class="tel-value">${(lastDetectedEvent.conf * 100).toFixed(0)}%</span></div>
+          <div class="tel-item"><span class="tel-label">CONFIDENCE</span><span class="tel-value">(${lastDetectedEvent.conf * 100}).toFixed(0)%</span></div>
         </div>
       </div>
     `;
@@ -450,13 +469,11 @@ function renderSideView() {
   const bridgeX = sideCanvas.width / 2;
   const bridgeY = 200;
 
-  // Satellite
   sideCtx.fillStyle = '#bdc3c7';
   sideCtx.beginPath(); sideCtx.arc(satX, satY, 10, 0, Math.PI*2); sideCtx.fill();
   sideCtx.fillStyle = '#2f3640'; sideCtx.font = '10px monospace'; sideCtx.textAlign = 'center';
   sideCtx.fillText('SATELLITE', satX, satY - 20);
 
-  // Bridge/Pointer
   sideCtx.fillStyle = '#f1c40f';
   sideCtx.beginPath(); sideCtx.arc(bridgeX, bridgeY, 8, 0, Math.PI*2); sideCtx.fill();
   sideCtx.strokeStyle = '#f1c40f';
@@ -465,7 +482,6 @@ function renderSideView() {
   sideCtx.fillStyle = '#2f3640';
   sideCtx.fillText('SATELLITE BRIDGE', bridgeX, bridgeY + 25);
 
-  // Connection: Bridge to Satellite
   sideCtx.strokeStyle = 'rgba(241, 196, 15, 0.4)';
   sideCtx.lineWidth = 2;
   sideCtx.setLineDash([5, 5]);
@@ -478,7 +494,6 @@ function renderSideView() {
   sideCtx.fillStyle = '#edf2f7';
   sideCtx.fillRect(0, sideCanvas.height - 40, sideCanvas.width, 40);
 
-  // Variated heights for drones
   const dronePositions = drones.map((d, i) => ({
     x: (sideCanvas.width / (drones.length + 1)) * (i + 1),
     y: sideCanvas.height - 150 - (i * 60) - (Math.sin(Date.now()/1000 + i)*20),
@@ -486,7 +501,6 @@ function renderSideView() {
     conn: d.connection
   }));
 
-  // Drone Mesh (Internal Communication)
   sideCtx.strokeStyle = 'rgba(44, 62, 80, 0.1)';
   sideCtx.lineWidth = 1;
   for(let i=0; i<dronePositions.length; i++) {
@@ -498,7 +512,6 @@ function renderSideView() {
     }
   }
 
-  // Drone to Bridge connections
   dronePositions.forEach(p => {
     sideCtx.strokeStyle = 'rgba(52, 152, 219, 0.1)';
     sideCtx.lineWidth = 1;
@@ -508,7 +521,6 @@ function renderSideView() {
     sideCtx.stroke();
   });
 
-  // Packet Animation
   if (Math.random() < 0.05 && drones.length > 0) {
     const start = dronePositions[Math.floor(Math.random()*dronePositions.length)];
     packets.push({
@@ -516,7 +528,7 @@ function renderSideView() {
       bridgeX: bridgeX, bridgeY: bridgeY,
       satX: satX, satY: satY, 
       p: 0, 
-      stage: 1, // 1: Drone -> Bridge, 2: Bridge -> Satellite
+      stage: 1,
       color: start.conn === 'satellite' ? '#3498db' : '#27ae60'
     });
   }
