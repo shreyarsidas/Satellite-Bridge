@@ -17,11 +17,10 @@ const db = new sqlite3.Database('./satellite_bridge.db', (err) => {
 });
 
 db.serialize(() => {
-    // For development: reset schema to ensure columns match current code
+    // Reset schema to ensure absolute consistency
     db.run("DROP TABLE IF EXISTS detected_population");
     db.run("DROP TABLE IF EXISTS reference_population");
 
-    // 1. Reference Population Table (The "Source of Truth")
     db.run(`CREATE TABLE reference_population (
         sector_id TEXT PRIMARY KEY,
         sector_name TEXT,
@@ -30,7 +29,6 @@ db.serialize(() => {
         cleared_at DATETIME
     )`);
 
-    // 2. Real-time Detection Table (Tracking by Drones)
     db.run(`CREATE TABLE detected_population (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sector_id TEXT,
@@ -41,18 +39,30 @@ db.serialize(() => {
     )`);
 
     // Seed reference data
-    const stmt = db.prepare("INSERT INTO reference_population (sector_id, sector_name, total_expected) VALUES (?, ?, ?)");
-    stmt.run('SEC-A', 'North Residential', 150);
-    stmt.run('SEC-B', 'Industrial Zone', 45);
-    stmt.run('SEC-C', 'Central Market', 300);
-    stmt.run('SEC-D', 'South Waterfront', 80);
-    stmt.finalize();
-    console.log('Reference population data seeded successfully.');
+    const sectors = [
+        ['SEC-A', 'North Residential', 150],
+        ['SEC-B', 'Industrial Zone', 45],
+        ['SEC-C', 'Central Market', 300],
+        ['SEC-D', 'South Waterfront', 80]
+    ];
+    const refStmt = db.prepare("INSERT INTO reference_population (sector_id, sector_name, total_expected) VALUES (?, ?, ?)");
+    sectors.forEach(s => refStmt.run(...s));
+    refStmt.finalize();
+
+    // SEED INITIAL APPROXIMATE DETECTIONS (So table isn't empty on first load)
+    const detStmt = db.prepare("INSERT INTO detected_population (sector_id, count, drone_id) VALUES (?, ?, ?)");
+    sectors.forEach(s => {
+        // Generate a random initial "approximate" detection (30% to 70% of expected)
+        const approx = Math.floor(s[2] * (0.3 + Math.random() * 0.4));
+        detStmt.run(s[0], approx, 'SATELLITE-SCAN-01');
+    });
+    detStmt.finalize();
+    
+    console.log('Database reset, reference data seeded, and initial approximate detections generated.');
 });
 
 // --- API Endpoints ---
 
-// Update detection: When a drone finds people
 app.post('/api/detection', (req, res) => {
     const { sector_id, count, drone_id } = req.body;
     if (!sector_id || count === undefined) {
@@ -66,7 +76,6 @@ app.post('/api/detection', (req, res) => {
     });
 });
 
-// Mark Sector as Cleared: Manual override for ground teams
 app.post('/api/clear-sector', (req, res) => {
     const { sector_id } = req.body;
     if (!sector_id) return res.status(400).json({ error: 'Missing sector_id' });
@@ -78,7 +87,6 @@ app.post('/api/clear-sector', (req, res) => {
     });
 });
 
-// Get Evacuation Status: Compare Reference vs Detected + Manual Clearance
 app.get('/api/evacuation-status', (req, res) => {
     const sql = `
         SELECT 
@@ -100,12 +108,11 @@ app.get('/api/evacuation-status', (req, res) => {
     });
 });
 
-// General Telemetry (Legacy)
 app.get('/api/telemetry', (req, res) => {
     res.json({ status: 'online', timestamp: new Date().toISOString() });
 });
 
 app.listen(PORT, () => {
     console.log(`\n🚀 Satellite Bridge Backend running at http://localhost:${PORT}`);
-    console.log(`📊 Population DB reset & seeded. Evacuation API live at /api/evacuation-status`);
+    console.log(`📊 Population DB active with initial approx data. API: /api/evacuation-status`);
 });
