@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SATELLITE BRIDGE — Mission Control</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-main: #f4f7f9;
+    --bg-surface: #ffffff;
+    --bg-surface-alt: #f8f9fa;
+    --accent-primary: #2c3e50; /* Slate Blue */
+    --accent-blue: #3498db;
+    --accent-green: #27ae60;
+    --accent-crit: #c0392b;
+    --border-color: #dcdde1;
+    --text-main: #2f3640;
+    --text-muted: #7f8c8d;
+    --text-dim: #bdc3c7;
+    --font-main: 'Inter', sans-serif;
+    --font-header: 'Space Grotesk', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+    --radius: 8px;
+    --shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+
+  * { box-sizing: border-box; }
+  body, html { 
+    margin: 0; padding: 0; height: 100%; 
+    background: var(--bg-main); color: var(--text-main); 
+    font-family: var(--font-main); overflow: hidden;
+  }
+
+  .app-container { 
+    display: grid; 
+    grid-template-columns: 320px 1fr 350px; 
+    grid-template-rows: 64px 1fr; 
+    height: 100vh; 
+  }
+
+  /* --- Header --- */
+  header {
+    grid-column: 1 / -1;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand h1 { 
+    font-family: var(--font-header); font-size: 18px; font-weight: 700; 
+    margin: 0; color: var(--accent-primary);
+  }
+  .brand .badge {
+    font-family: var(--font-mono); font-size: 10px; padding: 2px 8px; 
+    background: var(--accent-primary); color: #fff; border-radius: 4px; font-weight: 600;
+  }
+  .header-controls { display: flex; align-items: center; gap: 12px; }
+
+  .conn-pill {
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    background: var(--bg-surface-alt); border: 1px solid var(--border-color);
+    border-radius: 20px; font-family: var(--font-mono); font-size: 12px;
+    color: var(--text-main);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.cellular { background: var(--accent-green); }
+  .dot.satellite { background: var(--accent-blue); animation: pulse 1.5s infinite; }
+  .dot.offline { background: var(--text-dim); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  /* --- Left Sidebar --- */
+  .sidebar-left { 
+    background: var(--bg-surface); 
+    border-right: 1px solid var(--border-color); 
+    padding: 20px; display: flex; flex-direction: column; gap: 20px; 
+    overflow-y: auto;
+  }
+  .card { 
+    background: var(--bg-surface); 
+    border: 1px solid var(--border-color); 
+    border-radius: var(--radius); padding: 16px;
+    box-shadow: var(--shadow);
+  }
+  .card h3 { 
+    font-family: var(--font-header); font-size: 12px; text-transform: uppercase; 
+    color: var(--text-muted); margin: 0 0 16px 0; letter-spacing: 0.5px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .telemetry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .tel-item { display: flex; flex-direction: column; gap: 4px; }
+  .tel-label { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+  .tel-value { font-size: 14px; font-weight: 600; font-family: var(--font-mono); color: var(--text-main); }
+
+  .battery-track { 
+    height: 6px; background: #edf2f7; border-radius: 3px; 
+    overflow: hidden; margin: 8px 0;
+  }
+  .battery-fill { height: 100%; background: var(--accent-green); transition: width 0.5s; }
+
+  .disaster-palette { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .disaster-chip {
+    background: var(--bg-surface-alt); border: 1px solid var(--border-color);
+    padding: 8px; border-radius: 8px; cursor: grab;
+    display: flex; align-items: center; gap: 8px; font-size: 12px;
+    transition: all 0.2s; user-select: none; color: var(--text-main);
+  }
+  .disaster-chip:hover { border-color: var(--accent-crit); background: #fff5f5; }
+
+  /* --- Center Area --- */
+  .main-content { position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .map-stack { position: relative; flex: 1; overflow: hidden; }
+  #map { position: absolute; inset: 0; z-index: 1; background: #fff; }
+
+  .view-controls {
+    position: absolute; top: 20px; left: 20px; z-index: 1000;
+    display: flex; gap: 10px;
+  }
+  .map-overlay {
+    position: absolute; top: 20px; right: 20px; z-index: 1000;
+    background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px);
+    padding: 12px 16px; border-radius: var(--radius); border: 1px solid var(--border-color);
+    font-family: var(--font-mono); font-size: 12px; pointer-events: none; color: var(--text-main);
+    box-shadow: var(--shadow);
+  }
+
+  .tabs-container {
+    height: 220px; background: var(--bg-surface); 
+    border-top: 1px solid var(--border-color);
+    display: flex; flex-direction: column;
+  }
+  .tabs-nav { display: flex; background: var(--bg-surface-alt); padding: 4px; gap: 4px; }
+  .tab-btn { 
+    flex: 1; background: transparent; border: none; padding: 8px; 
+    font-size: 12px; color: var(--text-muted); cursor: pointer; border-radius: 6px;
+  }
+  .tab-btn.active { background: var(--bg-surface); color: var(--accent-primary); font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+  .tab-panel { display: none; padding: 16px; flex: 1; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; color: var(--text-main); }
+  .tab-panel.active { display: block; }
+
+  /* --- Right Sidebar --- */
+  .sidebar-right { 
+    background: var(--bg-surface); 
+    border-left: 1px solid var(--border-color); 
+    padding: 20px; display: flex; flex-direction: column; gap: 20px; 
+    overflow-y: auto;
+  }
+  .snapshot-box {
+    aspect-ratio: 16/10; background: #fdfdfd; border: 1px solid var(--border-color);
+    border-radius: var(--radius); display: flex; align-items: center; justify-content: center;
+    font-size: 48px; position: relative; background-image: radial-gradient(#dcdde1 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .snapshot-badge {
+    position: absolute; top: 12px; left: 12px; background: var(--accent-crit);
+    color: #fff; font-family: var(--font-mono); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+  }
+
+  .event-item {
+    padding: 10px; background: var(--bg-surface-alt); border-left: 3px solid var(--border-color);
+    border-radius: 4px; font-size: 12px; font-family: var(--font-mono); margin-bottom: 8px; color: var(--text-main);
+  }
+  .event-item.crit { border-left-color: var(--accent-crit); background: #fff5f5; }
+
+  button {
+    font-family: var(--font-main); cursor: pointer; transition: all 0.2s;
+    background: var(--bg-surface-alt); color: var(--text-main);
+    border: 1px solid var(--border-color); border-radius: 6px;
+    padding: 8px 12px; font-size: 13px;
+  }
+  button:hover { background: #edf2f7; }
+  button.primary { background: var(--accent-primary); color: #fff; border: none; font-weight: 600; }
+  button.solved-btn { background: var(--accent-green); color: #fff; border: none; font-weight: 600; width: 100%; margin-top: 12px; }
+
+  .drag-over { outline: 3px dashed var(--accent-crit); outline-offset: -6px; }
+  .place-mode { outline: 3px solid var(--accent-blue); outline-offset: -6px; }
+  
+  /* --- Visuals: Large Drone & Signal --- */
+  .drone-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+  }
+  .drone-ping {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border: 3px solid var(--drone-color, var(--accent-blue));
+    border-radius: 50%;
+    animation: dronePing 3s infinite ease-out;
+    opacity: 0;
+    pointer-events: none;
+  }
+  @keyframes dronePing {
+    0% { transform: scale(0.6); opacity: 0.7; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+
+  /* --- Visuals: Large Disaster --- */
+  .disaster-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+  }
+  .disaster-ring {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border: 4px solid var(--accent-crit);
+    border-radius: 50%;
+    animation: disasterPulse 2s infinite ease-in-out;
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  @keyframes disasterPulse {
+    0% { transform: scale(0.8); opacity: 0.8; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+
+  .leaflet-popup-content-wrapper { background: var(--bg-surface); color: var(--text-main); border: 1px solid var(--border-color); }
+  .leaflet-popup-tip { background: var(--bg-surface); }
+  .popup-solve-btn { background: var(--accent-green); color: #fff; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; font-family: var(--font-mono); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div class="app-container">
+  <header>
+    <div class="brand">
+      <h1>SATELLITE BRIDGE <span class="badge">MISSION CONTROL</span></h1>
+    </div>
+    <div class="header-controls">
+      <select id="drone-select" style="background:var(--bg-surface-alt); color:var(--text-main); border:1px solid var(--border-color); padding:4px 8px; border-radius:4px;"></select>
+      <button id="add-drone-btn">PLACE DRONE</button>
+      <button id="fail-drone-btn">⚠️ SIMULATE FAILURE</button>
+      <button id="outage-btn">FORCE OUTAGE</button>
+      <div class="conn-pill">
+        <span class="dot cellular" id="conn-dot"></span>
+        <span id="conn-text">CELLULAR LINK</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="sidebar-left">
+    <div class="card">
+      <h3>Telemetry <span id="drone-id-label">Falcon-1</span></h3>
+      <div class="telemetry-grid">
+        <div class="tel-item"><span class="tel-label">LAT</span><span class="tel-value" id="t-lat">0.0000</span></div>
+        <div class="tel-item"><span class="tel-label">LON</span><span class="tel-value" id="t-lon">0.0000</span></div>
+        <div class="tel-item"><span class="tel-label">ALT</span><span class="tel-value" id="t-alt">0m</span></div>
+        <div class="tel-item"><span class="tel-label">SPD</span><span class="tel-value" id="t-spd">0km/h</span></div>
+        <div class="tel-item"><span class="tel-label">AREA</span><span class="tel-value" id="t-area">—</span></div>
+        <div class="tel-item"><span class="tel-label">POPULATION</span><span class="tel-value" id="t-pop">—</span></div>
+      </div>
+      <div style="margin-top:12px">
+        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-bottom:4px">
+          <span>BATTERY</span><span id="t-batt">100%</span>
+        </div>
+        <div class="battery-track"><div class="battery-fill" id="batt-fill" style="width:100%"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Communication</h3>
+      <div class="telemetry-grid">
+        <div class="tel-item"><span class="tel-label">MODE</span><span class="tel-value" id="cm-mode">CELLULAR</span></div>
+        <div class="tel-item"><span class="tel-label">LATENCY</span><span class="tel-value" id="cm-lat">42ms</span></div>
+        <div class="tel-item"><span class="tel-label">STATUS</span><span class="tel-value" id="t-status">ACTIVE</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Disaster Injection <span style="font-size:10px">Drag to Map</span></h3>
+      <div class="disaster-palette" id="disasterPalette"></div>
+    </div>
+
+    <div class="card" style="flex:1; overflow-y:auto;">
+      <h3>Priority Queue</h3>
+      <div id="priority-banner"></div>
+      <div id="queue-list" style="display:flex; flex-direction:column; gap:4px;"></div>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="view-controls">
+      <button id="toggle-view">📡 SIDE VIEW</button>
+    </div>
+    <div class="map-stack" id="mapStack">
+      <div id="map"></div>
+    </div>
+    <div class="map-overlay" id="map-status">SATELLITE BRIDGE · LIVE TELEMETRY</div>
+    
+    <div class="tabs-container">
+      <div class="tabs-nav">
+        <button class="tab-btn active" data-tab="feed">Event Feed</button>
+        <button class="tab-btn" data-tab="history">Mission History</button>
+        <button class="tab-btn" data-tab="analytics">Analytics</button>
+        <button class="tab-btn" data-tab="evac">Evacuation Status</button>
+      </div>
+      <div id="tab-feed" class="tab-panel active"></div>
+      <div id="tab-history" class="tab-panel"></div>
+      <div id="tab-analytics" class="tab-panel">
+        <canvas id="battery-chart" width="600" height="100" style="width:100%; height:100px;"></canvas>
+        <div id="analytics-stats" style="margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:10px;"></div>
+      </div>
+      <div id="tab-evac" class="tab-panel"></div>
+    </div>
+  </div>
+
+  <div class="sidebar-right">
+    <div class="card">
+      <h3>Live Feed <span id="feed-drone-label" style="font-size:10px">STANDBY</span></h3>
+      <div style="position:relative; width:100%; aspect-ratio:16/10; background:#000; border-radius:6px; overflow:hidden;">
+        <div id="feed-standby-icon" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:32px;">📡</div>
+        <img id="live-feed-img" src="" style="width:100%; height:100%; object-fit:cover; display:none;" />
+        <video id="live-feed-vid" muted loop autoplay playsinline style="width:100%; height:100%; object-fit:cover; display:none;"></video>
+        <div id="feed-live-tag" style="display:none; position:absolute; top:8px; left:8px; background:rgba(192,57,43,0.9); color:#fff; font-family:var(--font-mono); font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px;">● LIVE</div>
+      </div>
+      <div style="margin-top:8px; font-family:var(--font-mono); font-size:10px; color:var(--text-muted); text-align:center;">
+        SAMPLE FEED — for human verification
+      </div>
+    </div>
+
+    <div class="card" style="flex:1; display:flex; flex-direction:column;">
+      <h3>Alert History</h3>
+      <div id="alert-feed" style="overflow-y:auto; flex:1;"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* =========================================================================
+   SATELLITE BRIDGE — ANALYTICS EXTENSION (V12)
+   ========================================================================= */
+
+const DISASTERS = {
+  fire: { label: 'Wildfire', icon: '🔥', color: '#c0392b', priority: 0 },
+  flood: { label: 'Flooding', icon: '🌊', color: '#3498db', priority: 1 },
+  quake: { label: 'Earthquake', icon: '🌍', color: '#f1c40f', priority: 1 },
+  storm: { label: 'Cyclone', icon: '🌪️', color: '#7f8c8d', priority: 2 },
+  chemical: { label: 'Chemical Leak', icon: '☢️', color: '#27ae60', priority: 0 },
+  bio: { label: 'Biohazard', icon: '☣️', color: '#8e44ad', priority: 0 },
+  gas: { label: 'Gas Leak', icon: '💨', color: '#f39c12', priority: 1 },
+  structural: { label: 'Collapse', icon: '🏚️', color: '#d35400', priority: 1 },
+};
+
+const EVENT_TYPES = {
+  person: { label: 'PERSON_DETECTED', icon: '🧍', priority: 0 },
+  fire: { label: 'FIRE_DETECTED', icon: '🔥', priority: 0 },
+  vehicle: { label: 'VEHICLE_DETECTED', icon: '🚙', priority: 2 },
+  animal: { label: 'ANIMAL_DETECTED', icon: '🦌', priority: 2 },
+};
+
+// Sample camera feed per disaster type — shown live when that disaster is active
+const DISASTER_FEEDS = {
+  flood: 'gif1.gif',
+  quake: 'gif2.gif',
+  storm: 'gif3.gif',
+  fire: 'gif4.mp4',
+};
+
+const HOME = { lat: 12.9716, lon: 80.2209 };
+const DEAD_ZONE = { lat: 12.9755, lon: 80.2255, radiusM: 900 };
+const DETECTION_RANGE = 5000; 
+
+let map, deadZoneCircle;
+let drones = [];
+let droneMarkers = {};
+let selectedDroneId = null;
+let outbox = [];
+let isPlacingDrone = false;
+let activeDisasters = [];
+let eventStats = { totalDetections: 0, solved: 0 };
+let lastDetectedEvent = null;
+
+// --- Preset fleet: 5 drones, each covering a named area with a known population ---
+const DRONE_PRESETS = [
+  { name: 'Falcon-1', area: 'Riverside District', population: 42000, dLat: 0,      dLon: 0      },
+  { name: 'Falcon-2', area: 'Old Town',           population: 18500, dLat: 0.009,  dLon: 0.006  },
+  { name: 'Falcon-3', area: 'Harbor Zone',        population: 65000, dLat: -0.007, dLon: 0.010  },
+  { name: 'Falcon-4', area: 'Industrial Belt',    population: 9800,  dLat: 0.005,  dLon: -0.011 },
+  { name: 'Falcon-5', area: 'Hillside Suburb',    population: 27500, dLat: -0.010, dLon: -0.008 },
+];
+
+// --- Fake in-memory database, mimics what a real backend would persist ---
+const FAKE_DB = { drones: [], telemetry: [], events: [], alerts: [], disasters: [], priority_decisions: [] };
+function dbWrite(collection, record) {
+  if (!FAKE_DB[collection]) FAKE_DB[collection] = [];
+  record._id = 'rec_' + Math.random().toString(36).slice(2, 9);
+  record._ts = new Date().toISOString();
+  FAKE_DB[collection].push(record);
+  if (FAKE_DB[collection].length > 200) FAKE_DB[collection].shift();
+}
+
+const DRONE_COLORS = [
+  { name: 'Blue',   hex: '#3498db' },
+  { name: 'Red',    hex: '#e74c3c' },
+  { name: 'Green',  hex: '#2ecc71' },
+  { name: 'Purple', hex: '#9b59b6' },
+  { name: 'Orange', hex: '#e67e22' },
+  { name: 'Yellow', hex: '#f1c40f' },
+  { name: 'Teal',   hex: '#1abc9c' },
+  { name: 'Pink',   hex: '#e84393' }
+];
+let nextColorIndex = 0;
+function nextDroneColor() {
+  const c = DRONE_COLORS[nextColorIndex % DRONE_COLORS.length];
+  nextColorIndex++;
+  return c;
+}
+
+function droneSvg(colorHex) {
+  return `
+<svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 12L18 6M12 12L6 6M12 12L18 18M12 12L6 18" stroke="#2c3e50" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="12" cy="12" r="3" fill="#2c3e50"/>
+  <circle cx="6" cy="6" r="2" fill="${colorHex}"/>
+  <circle cx="18" cy="6" r="2" fill="${colorHex}"/>
+  <circle cx="6" cy="18" r="2" fill="${colorHex}"/>
+  <circle cx="18" cy="18" r="2" fill="${colorHex}"/>
+</svg>`;
+}
+
+function init() {
+  initMap();
+  initDisasterPalette();
+  setupDragAndDrop();
+  DRONE_PRESETS.forEach(p => {
+    addDrone(p.name, HOME.lat + p.dLat, HOME.lon + p.dLon, p.area, p.population);
+  });
+  selectedDroneId = drones[0].id;
+  updateDroneSelect();
+  updateLiveFeed();
+  renderEvacuationStatus();
+  setInterval(tick, 100);
+}
+
+function initMap() {
+  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([HOME.lat, HOME.lon], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  deadZoneCircle = L.circle([DEAD_ZONE.lat, DEAD_ZONE.lon], {
+    radius: DEAD_ZONE.radiusM, color: '#c0392b', fillColor: '#c0392b', fillOpacity: 0.1, weight: 1, dashArray: '5,5'
+  }).addTo(map);
+  map.on('click', (e) => {
+    if (isPlacingDrone) {
+      addDrone(null, e.latlng.lat, e.latlng.lng);
+      isPlacingDrone = false;
+      document.getElementById('map').classList.remove('place-mode');
+      document.getElementById('add-drone-btn').textContent = 'PLACE DRONE';
+    }
+  });
+}
+
+function initDisasterPalette() {
+  const palette = document.getElementById('disasterPalette');
+  Object.entries(DISASTERS).forEach(([id, data]) => {
+    const chip = document.createElement('div');
+    chip.className = 'disaster-chip';
+    chip.draggable = true;
+    chip.dataset.type = id;
+    chip.innerHTML = `<span>${data.icon}</span> <span>${data.label}</span>`;
+    chip.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', id); });
+    palette.appendChild(chip);
+  });
+}
+
+function setupDragAndDrop() {
+  const mapEl = document.getElementById('map');
+  mapEl.addEventListener('dragover', (e) => { e.preventDefault(); mapEl.classList.add('drag-over'); });
+  mapEl.addEventListener('dragleave', () => mapEl.classList.remove('drag-over'));
+  mapEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    mapEl.classList.remove('drag-over');
+    const type = e.dataTransfer.getData('text/plain');
+    const point = map.mouseEventToLatLng(e);
+    const disasterData = DISASTERS[type];
+    
+    const marker = L.marker([point.lat, point.lng], {
+      icon: L.divIcon({ 
+        className: '', 
+        html: `<div class="disaster-container"><div class="disaster-ring"></div><div style="font-size:36px; z-index:1">${disasterData.icon}</div></div>`, 
+        iconSize: [80, 80], iconAnchor: [40, 40] 
+      })
+    }).addTo(map);
+    
+    marker.bindPopup(`
+      <div style="text-align:center; font-family:var(--font-mono); color:#000; padding:5px;">
+        <b style="display:block; margin-bottom:8px;">${disasterData.label}</b>
+        <button onclick="solveDisaster('${marker._leaflet_id}')" class="popup-solve-btn">MARK SOLVED</button>
+      </div>`);
+    // Assign the disaster to whichever drone's area it fell nearest to (population lookup)
+    let nearestDrone = null, minDist = Infinity;
+    drones.forEach(dr => {
+      const dist = map.distance([dr.lat, dr.lon], [point.lat, point.lng]);
+      if (dist < minDist) { minDist = dist; nearestDrone = dr; }
+    });
+    const disasterRecord = {
+      id: String(marker._leaflet_id), marker: marker, type: type, label: disasterData.label,
+      area: nearestDrone ? nearestDrone.area : 'Unknown', population: nearestDrone ? nearestDrone.population : 0,
+      assignedDrone: nearestDrone ? nearestDrone.id : 'N/A'
+    };
+    activeDisasters.push(disasterRecord);
+    dbWrite('disasters', { type, area: disasterRecord.area, population: disasterRecord.population, assignedDrone: disasterRecord.assignedDrone });
+    checkDetections(type, disasterData, point);
+    evaluateDisasterPriority();
+  });
+}
+
+function evaluateDisasterPriority() {
+  const banner = document.getElementById('priority-banner');
+  if (banner) {
+    if (activeDisasters.length < 2) {
+      banner.innerHTML = '';
+    } else {
+      const ranked = [...activeDisasters].sort((a, b) => (b.population || 0) - (a.population || 0));
+      const top = ranked[0];
+      banner.innerHTML = `
+        <div class="event-item crit" style="margin-bottom:8px;">
+          <b>🏆 PRIORITY: ${top.area}</b> (pop ${top.population.toLocaleString()})<br/>
+          <span style="font-size:10px; opacity:0.8">Dispatch ${top.assignedDrone} first — highest population at risk among ${ranked.length} active disasters.</span>
+        </div>
+      `;
+      logEvent(`Priority ranking: ${top.area} (pop ${top.population.toLocaleString()}) prioritized over ${ranked.length - 1} other active disaster(s).`, 'crit');
+      dbWrite('priority_decisions', {
+        top_area: top.area, top_population: top.population, dispatch_drone: top.assignedDrone,
+        contenders: ranked.map(r => ({ area: r.area, population: r.population }))
+      });
+    }
+  }
+  renderEvacuationStatus();
+  updateLiveFeed();
+}
+
+function renderEvacuationStatus() {
+  const panel = document.getElementById('tab-evac');
+  if (!panel) return;
+  if (activeDisasters.length === 0) {
+    panel.innerHTML = `<div class="event-item" style="text-align:center; color:var(--text-muted)">No active disasters. All areas nominal.</div>`;
+    return;
+  }
+  const ranked = [...activeDisasters].sort((a, b) => (b.population || 0) - (a.population || 0));
+  panel.innerHTML = ranked.map((dis, i) => `
+    <div class="event-item ${i === 0 && ranked.length > 1 ? 'crit' : ''}" style="margin-bottom:8px;">
+      <b>#${i + 1} ${i === 0 && ranked.length > 1 ? '🏆 ' : ''}${dis.label} — ${dis.area}</b><br/>
+      <span style="font-size:10px; opacity:0.8">Population at risk: ${dis.population.toLocaleString()} · Assigned: ${dis.assignedDrone} · Evacuation priority: ${i === 0 ? 'IMMEDIATE' : 'QUEUED'}</span>
+    </div>
+  `).join('');
+}
+
+window.solveDisaster = function(markerId) {
+  const idx = activeDisasters.findIndex(d => d.id === String(markerId));
+  if (idx !== -1) {
+    map.removeLayer(activeDisasters[idx].marker);
+    activeDisasters.splice(idx, 1);
+    eventStats.solved++;
+    logEvent(`Disaster resolved by ground team.`, 'info');
+    evaluateDisasterPriority();
+  }
+};
+
+function addDrone(name, lat, lon, area, population) {
+  const color = nextDroneColor();
+  const id = name || `Drone ${color.name}`;
+  const d = {
+    id, lat: lat || HOME.lat, lon: lon || HOME.lon,
+    alt: 120, batt: 100, connection: 'cellular', hoverPhase: Math.random()*Math.PI*2,
+    batteryHistory: [100], color: color.hex, colorName: color.name,
+    area: area || `Sector ${drones.length + 1}`,
+    population: population != null ? population : Math.floor(1000 + Math.random() * 20000),
+    status: 'active',
+    lastKnown: { lat: lat || HOME.lat, lon: lon || HOME.lon, ts: new Date().toLocaleTimeString() }
+  };
+  drones.push(d);
+  dbWrite('drones', { id: d.id, area: d.area, population: d.population, lat: d.lat, lon: d.lon });
+  const marker = L.marker([d.lat, d.lon], {
+    draggable: true,
+    icon: L.divIcon({ 
+      className: '', 
+      html: `<div class="drone-container" style="--drone-color:${color.hex}"><div class="drone-ping"></div><div style="z-index:2">${droneSvg(color.hex)}</div></div>`, 
+      iconSize: [64, 64], iconAnchor: [32, 32] 
+    })
+  }).addTo(map);
+  marker.on('dragend', (e) => {
+    const newPos = e.target.getLatLng();
+    d.lat = newPos.lat; d.lon = newPos.lng;
+  });
+  droneMarkers[id] = marker;
+  updateDroneSelect();
+  logEvent(`${id} deployed to sector.`, 'info');
+}
+
+function updateDroneSelect() {
+  const sel = document.getElementById('drone-select');
+  sel.innerHTML = drones.map(d => `<option value="${d.id}" ${d.id === selectedDroneId ? 'selected' : ''}>${d.id}${d.status === 'failed' ? ' [FAILED]' : ''}</option>`).join('');
+}
+
+function logEvent(msg, type) {
+  const feed = document.getElementById('tab-feed');
+  const item = document.createElement('div');
+  item.className = `event-item ${type === 'crit' ? 'crit' : 'info'}`;
+  item.innerHTML = `<span style="color:var(--text-muted)">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+  feed.prepend(item);
+}
+
+function checkDetections(type, data, coords) {
+  const detectingDrones = drones.map(d => {
+    const dist = map.distance([d.lat, d.lon], [coords.lat, coords.lng]);
+    return { drone: d, distance: dist };
+  }).filter(item => item.distance <= DETECTION_RANGE);
+
+  if (detectingDrones.length > 0) {
+    detectingDrones.sort((a, b) => a.distance - b.distance);
+    const closestDrone = detectingDrones[0].drone;
+    const firstDetector = detectingDrones[Math.floor(Math.random() * detectingDrones.length)].drone;
+    
+    let confidence = 0.85 + (detectingDrones.length * 0.03);
+    confidence = Math.min(confidence, 0.99).toFixed(2);
+    
+    const primaryDroneId = firstDetector.id;
+    triggerDetection(primaryDroneId, type, data, coords, detectingDrones.length, closestDrone.id, firstDetector.id);
+  }
+}
+
+
+
+
+function triggerDetection(droneId, typeKey, data, coords, droneCount, closestId, firstId) {
+  const conf = (0.85 + (droneCount * 0.03)).toFixed(2);
+  const ts = new Date().toLocaleTimeString();
+  const event = {
+    droneId, type: data.label, icon: data.icon, priority: data.priority,
+    conf: conf, lat: coords.lat.toFixed(4), lon: coords.lng.toFixed(4),
+    ts: ts, closestDrone: closestId, firstDetector: firstId, droneCount: droneCount
+  };
+  
+  lastDetectedEvent = event;
+  eventStats.totalDetections++;
+  dbWrite('events', event);
+
+  outbox.push(event);
+  updateQueueUI();
+  const feed = document.getElementById('alert-feed');
+  const item = document.createElement('div');
+  item.className = `event-item ${data.priority === 0 ? 'crit' : ''}`;
+  const reporterText = droneCount > 1 ? `${droneId} (+${droneCount-1} others)` : droneId;
+  item.innerHTML = `<b>${data.icon} ${data.label}</b> · ${reporterText}<br/><span style="font-size:10px; opacity:0.7">${ts} · Conf: ${conf}</span>`;
+  feed.prepend(item);
+  const hist = document.getElementById('tab-history');
+  const hItem = document.createElement('div');
+  hItem.className = 'event-item';
+  hItem.innerHTML = `<b>${ts}</b>: ${data.label} detected by ${reporterText} via SATELLITE`;
+  hist.prepend(hItem);
+  logEvent(`ALERT: ${data.label} detected by ${reporterText}`, 'crit');
+}
+
+function updateQueueUI() {
+  const list = document.getElementById('queue-list');
+  list.innerHTML = outbox.slice(-10).reverse().map(m => `
+    <div class="event-item" style="font-size:11px; margin-bottom:4px; border-left-color:var(--accent-primary)">
+      <span style="color:var(--accent-primary)">P${m.priority}</span> ${m.droneId}: ${m.type} → SATELLITE
+    </div>
+  `).join('');
+}
+
+function tick() {
+  const t = Date.now() / 1000;
+  drones.forEach(d => {
+    if (d.status === 'failed') return; // stays put at last known location
+    const offsetLat = Math.sin(t * 0.5 + d.hoverPhase) * 0.00005;
+    const offsetLon = Math.cos(t * 0.5 + d.hoverPhase) * 0.00005;
+    d.batt -= 0.001;
+    if (d.batt < 0) d.batt = 0;
+    d.batteryHistory.push(d.batt);
+    if (d.batteryHistory.length > 100) d.batteryHistory.shift();
+    d.lastKnown = { lat: d.lat, lon: d.lon, ts: new Date().toLocaleTimeString() };
+    droneMarkers[d.id].setLatLng([d.lat + offsetLat, d.lon + offsetLon]);
+    if (d.batt <= 0) failDrone(d);
+  });
+  const d = drones.find(dr => dr.id === selectedDroneId);
+  if (!d) return;
+  document.getElementById('drone-id-label').textContent = d.id;
+  document.getElementById('t-lat').textContent = d.lat.toFixed(4);
+  document.getElementById('t-lon').textContent = d.lon.toFixed(4);
+  document.getElementById('t-alt').textContent = Math.round(d.alt) + 'm';
+  document.getElementById('t-batt').textContent = Math.round(d.batt) + '%';
+  document.getElementById('batt-fill').style.width = d.batt + '%';
+  document.getElementById('t-area').textContent = d.area;
+  document.getElementById('t-pop').textContent = d.population.toLocaleString();
+  document.getElementById('t-status').textContent = d.status === 'failed' ? 'FAILED' : 'ACTIVE';
+  if (d.status === 'failed') {
+    document.getElementById('conn-dot').className = 'dot offline';
+    document.getElementById('conn-text').textContent = 'DRONE OFFLINE';
+    document.getElementById('cm-mode').textContent = 'FAILED';
+  } else {
+    const dist = map.distance([d.lat, d.lon], [DEAD_ZONE.lat, DEAD_ZONE.lon]);
+    if (dist < DEAD_ZONE.radiusM) {
+      d.connection = 'satellite';
+      document.getElementById('conn-dot').className = 'dot satellite';
+      document.getElementById('conn-text').textContent = 'SATELLITE UPLINK';
+      document.getElementById('cm-mode').textContent = 'SATELLITE';
+    } else {
+      d.connection = 'cellular';
+      document.getElementById('conn-dot').className = 'dot cellular';
+      document.getElementById('conn-text').textContent = 'CELLULAR LINK';
+      document.getElementById('cm-mode').textContent = 'CELLULAR';
+    }
+  }
+  updateAnalytics();
+}
+
+function failDrone(d) {
+  if (d.status === 'failed') return;
+  d.status = 'failed';
+  d.connection = 'offline';
+  if (droneMarkers[d.id]) droneMarkers[d.id].setOpacity(0.35);
+  logEvent(`⚠️ ALERT: ${d.id} has FAILED. Last known location: ${d.lastKnown.lat.toFixed(4)}, ${d.lastKnown.lon.toFixed(4)}`, 'crit');
+  const alertFeed = document.getElementById('alert-feed');
+  const item = document.createElement('div');
+  item.className = 'event-item crit';
+  item.innerHTML = `<b>⚠️ DRONE FAILURE</b> · ${d.id} (${d.area})<br/><span style="font-size:10px; opacity:0.7">Last known: ${d.lastKnown.lat.toFixed(4)}, ${d.lastKnown.lon.toFixed(4)} · ${d.lastKnown.ts}</span>`;
+  alertFeed.prepend(item);
+  dbWrite('alerts', { drone: d.id, area: d.area, type: 'drone_failure', lastKnown: d.lastKnown });
+
+  const allFailed = drones.every(dr => dr.status === 'failed');
+  if (allFailed) {
+    const locs = drones.map(dr => `${dr.id}: ${dr.lastKnown.lat.toFixed(4)}, ${dr.lastKnown.lon.toFixed(4)}`).join(' | ');
+    logEvent(`🚨 CRITICAL: ALL DRONES OFFLINE. Last known locations — ${locs}`, 'crit');
+    const critItem = document.createElement('div');
+    critItem.className = 'event-item crit';
+    critItem.innerHTML = `<b>🚨 TOTAL SWARM FAILURE</b><br/><span style="font-size:10px; opacity:0.7">${locs}</span>`;
+    alertFeed.prepend(critItem);
+    dbWrite('alerts', { type: 'total_swarm_failure', locations: drones.map(dr => ({ id: dr.id, area: dr.area, lastKnown: dr.lastKnown })) });
+  }
+}
+
+function updateAnalytics() {
+  const d = drones.find(dr => dr.id === selectedDroneId);
+  if (!d) return;
+  const canvas = document.getElementById('battery-chart');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width, canvas.height);
+  ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 2; ctx.beginPath();
+  d.batteryHistory.forEach((v, i) => {
+    const x = (i / (d.batteryHistory.length - 1)) * canvas.width;
+    const y = canvas.height - (v / 100) * canvas.height;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  const stats = document.getElementById('analytics-stats');
+  let eventDetailHtml = '';
+  if (lastDetectedEvent) {
+    // Recalculate current closest drone to the last event coordinates
+    let currentClosest = 'None';
+    let minDist = Infinity;
+    drones.forEach(dr => {
+      const dist = map.distance([dr.lat, dr.lon], [lastDetectedEvent.lat, lastDetectedEvent.lon]);
+      if (dist < minDist) {
+        minDist = dist;
+        currentClosest = dr.id;
+      }
+    });
+
+    eventDetailHtml = `
+      <div class="card" style="grid-column: span 2; padding:12px; background:var(--bg-surface-alt);">
+        <div class="tel-label" style="margin-bottom:8px; text-align:center">LAST EVENT ANALYSIS</div>
+        <div class="telemetry-grid">
+          <div class="tel-item"><span class="tel-label">FIRST DETECTOR</span><span class="tel-value">${lastDetectedEvent.firstDetector}</span></div>
+          <div class="tel-item"><span class="tel-label">CURRENT CLOSEST</span><span class="tel-value">${currentClosest}</span></div>
+          <div class="tel-item"><span class="tel-label">DETECTION TIME</span><span class="tel-value">${lastDetectedEvent.ts}</span></div>
+          <div class="tel-item"><span class="tel-label">CONFIDENCE</span><span class="tel-value">${(lastDetectedEvent.conf * 100).toFixed(0)}%</span></div>
+        </div>
+      </div>
+    `;
+  } else {
+    eventDetailHtml = `<div class="card" style="grid-column: span 2; padding:12px; text-align:center; color:var(--text-muted)">No events detected yet.</div>`;
+  }
+  stats.innerHTML = `
+    <div class="card" style="padding:10px; text-align:center;">
+      <div class="tel-label">DETECTIONS</div>
+      <div class="tel-value" style="font-size:20px">${eventStats.totalDetections}</div>
+    </div>
+    <div class="card" style="padding:10px; text-align:center;">
+      <div class="tel-label">RESOLVED</div>
+      <div class="tel-value" style="font-size:20px">${eventStats.solved}</div>
+    </div>
+    ${eventDetailHtml}
+  `;
+}
+
+document.getElementById('drone-select').addEventListener('change', e => {
+  selectedDroneId = e.target.value;
+  updateLiveFeed();
+});
+
+document.getElementById('add-drone-btn').addEventListener('click', () => {
+  isPlacingDrone = true;
+  document.getElementById('map').classList.add('place-mode');
+  document.getElementById('add-drone-btn').textContent = 'CLICK MAP TO PLACE';
+});
+
+function updateLiveFeed() {
+  const img = document.getElementById('live-feed-img');
+  const vid = document.getElementById('live-feed-vid');
+  const label = document.getElementById('feed-drone-label');
+  const liveTag = document.getElementById('feed-live-tag');
+  const standbyIcon = document.getElementById('feed-standby-icon');
+
+  const ranked = [...activeDisasters].sort((a, b) => (b.population || 0) - (a.population || 0));
+  const active = ranked.find(d => DISASTER_FEEDS[d.type]);
+
+  if (!active) {
+    img.style.display = 'none';
+    vid.style.display = 'none';
+    vid.pause();
+    standbyIcon.style.display = 'flex';
+    liveTag.style.display = 'none';
+    label.textContent = 'STANDBY — no active disaster';
+    return;
+  }
+
+  const src = DISASTER_FEEDS[active.type];
+  standbyIcon.style.display = 'none';
+  liveTag.style.display = 'block';
+  label.textContent = `${active.assignedDrone} · ${active.area} · ${active.label}`;
+
+  if (src.endsWith('.mp4')) {
+    img.style.display = 'none';
+    if (!vid.src.endsWith(src)) vid.src = src;
+    vid.style.display = 'block';
+    vid.play().catch(() => {});
+  } else {
+    vid.style.display = 'none';
+    vid.pause();
+    if (!img.src.endsWith(src)) img.src = src;
+    img.style.display = 'block';
+  }
+}
+
+document.getElementById('fail-drone-btn').addEventListener('click', () => {
+  const d = drones.find(dr => dr.id === selectedDroneId);
+  if (d && d.status !== 'failed') {
+    d.batt = 0;
+    failDrone(d);
+  }
+});
+
+document.getElementById('outage-btn').addEventListener('click', () => {
+  document.getElementById('conn-dot').className = 'dot offline';
+  document.getElementById('conn-text').textContent = 'TOTAL OUTAGE';
+  document.getElementById('cm-mode').textContent = 'OFFLINE';
+  logEvent(`CRITICAL: Full network outage detected. Switching to store & forward.`, 'crit');
+});
+
+document.getElementById('toggle-view').addEventListener('click', () => {
+  window.open('sideview.html', '_blank');
+});
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+init();
+</script>
+</body>
+</html>

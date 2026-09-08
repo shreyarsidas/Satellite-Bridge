@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FANET Swarm-to-Satellite Mesh Relay — PROTOWAVE Prototype 2</title>
+<style>
+  :root{
+    --bg-navy:#0f172a; --bg-black:#030712;
+    --green:#10b981; --green-glow:#34d399;
+    --red:#ef4444; --red-glow:#dc2626;
+    --amber:#f59e0b;
+    --cyan:#22d3ee; --cyan-dim:rgba(34,211,238,0.12);
+    --ink-100:#e6edf7; --ink-300:#b6c4da; --ink-400:#8a94a8;
+    --ink-500:#64748b; --line:#123049;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;background:var(--bg-black);color:var(--ink-100);
+    font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+
+  header{
+    height:52px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+    padding:0 20px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(10,20,35,.9),rgba(3,7,18,.9));
+    backdrop-filter:blur(6px);
+  }
+  .brand{display:flex;align-items:center;gap:10px;min-width:0;}
+  .pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);flex:0 0 auto;
+    box-shadow:0 0 8px var(--cyan);animation:ping 1.8s ease-out infinite;}
+  @keyframes ping{0%{box-shadow:0 0 0 0 rgba(34,211,238,.6);}70%{box-shadow:0 0 0 8px rgba(34,211,238,0);}100%{box-shadow:0 0 0 0 rgba(34,211,238,0);}}
+  h1{font-size:12.5px;letter-spacing:.06em;font-weight:600;color:var(--cyan);margin:0;white-space:nowrap;}
+  .badge{font-size:10px;color:#7dd3fc;background:rgba(8,51,68,.7);border:1px solid #155e75;
+    padding:2px 8px;border-radius:3px;white-space:nowrap;}
+  .status-cluster{display:flex;align-items:center;gap:14px;font-size:11px;flex:0 0 auto;}
+  .status-cluster .sep{color:var(--ink-500);}
+  #topoStatus.stable{color:var(--green-glow);}
+  #topoStatus.reroute{color:var(--amber);}
+  #topoStatus.severed{color:var(--red);}
+
+  .main{flex:1;display:flex;min-height:0;}
+  .canvas-wrap{flex:1;position:relative;min-width:0;}
+  canvas{display:block;width:100%;height:100%;cursor:crosshair;
+    background:radial-gradient(circle at 50% 6%, var(--bg-navy) 0%, var(--bg-black) 78%);}
+  .hint{position:absolute;left:14px;bottom:12px;font-size:10px;color:var(--ink-500);
+    letter-spacing:.02em;pointer-events:none;}
+
+  aside{width:296px;flex:0 0 auto;border-left:1px solid var(--line);
+    background:rgba(2,6,23,.92);padding:14px;display:flex;flex-direction:column;
+    justify-content:space-between;font-size:11px;overflow-y:auto;}
+  aside h2{font-size:10.5px;letter-spacing:.05em;color:var(--cyan);margin:0 0 8px;
+    text-transform:uppercase;font-weight:600;}
+  aside h3{font-size:10px;letter-spacing:.05em;color:var(--ink-400);margin:14px 0 6px;
+    text-transform:uppercase;font-weight:600;}
+  .panel-block{border-bottom:1px solid var(--line);padding-bottom:12px;}
+  .diag-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .diag-cell{background:#0a1424;border:1px solid var(--line);border-radius:4px;padding:6px 8px;color:var(--ink-300);}
+  .diag-cell b{display:block;font-size:13px;margin-top:2px;font-weight:700;}
+  .diag-cell.gw b{color:var(--amber);}
+  .diag-cell.hop b{color:var(--cyan);}
+  .diag-cell.pdr b{color:var(--green-glow);}
+  .diag-cell.lat b{color:var(--ink-100);}
+
+  #routingTableLog{background:rgba(15,23,42,.55);border:1px solid var(--line);border-radius:4px;
+    padding:6px 8px;font-size:9.5px;line-height:1.55;max-height:150px;overflow-y:auto;}
+  #routingTableLog div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .log-info{color:var(--ink-400);}
+  .log-warn{color:var(--amber);}
+  .log-crit{color:var(--red);}
+  .log-ok{color:var(--green-glow);}
+
+  #droneToggles{display:flex;flex-direction:column;gap:5px;}
+  .drone-row{display:flex;align-items:center;gap:6px;
+    background:#0a1424;border:1px solid var(--line);border-radius:4px;padding:5px 8px;}
+  .drone-row .name{flex:1;display:flex;align-items:center;gap:6px;color:var(--ink-300);min-width:0;}
+  .src-radio{display:flex;align-items:center;flex:0 0 auto;}
+  .src-radio input{accent-color:#f59e0b;width:12px;height:12px;cursor:pointer;margin:0;}
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;}
+  .dot.active{background:var(--green-glow);box-shadow:0 0 5px var(--green-glow);}
+  .dot.gateway{background:var(--amber);box-shadow:0 0 5px var(--amber);}
+  .dot.offline{background:var(--red);box-shadow:0 0 5px var(--red);}
+  .drone-row button{font-family:inherit;font-size:9.5px;letter-spacing:.02em;cursor:pointer;
+    border-radius:3px;padding:3px 8px;border:1px solid;background:transparent;}
+  .drone-row button.sever{color:#fca5a5;border-color:#7f1d1d;}
+  .drone-row button.sever:hover{background:rgba(127,29,29,.35);}
+  .drone-row button.restore{color:#86efac;border-color:#14532d;}
+  .drone-row button.restore:hover{background:rgba(20,83,45,.35);}
+
+  #resetBtn{width:100%;padding:9px;margin-top:14px;background:#062634;color:#67e8f9;
+    border:1px solid #155e75;border-radius:4px;font-family:inherit;font-size:11px;
+    letter-spacing:.03em;cursor:pointer;}
+  #resetBtn:hover{background:#0a3444;}
+
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-thumb{background:#164e63;border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="brand">
+      <span class="pulse-dot"></span>
+      <h1>FANET SWARM&#8209;TO&#8209;SATELLITE MESH BRIDGE</h1>
+      <span class="badge">AODV DYNAMIC PROTOCOL</span>
+    </div>
+    <div class="status-cluster">
+      <span id="topoStatus" class="stable">TOPOLOGY: STABLE</span>
+      <span class="sep">|</span>
+      <span id="convergenceTime">FAILOVER LATENCY: 0 ms</span>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="canvas-wrap">
+      <canvas id="simCanvas"></canvas>
+      <div class="hint">Drag a drone to reposition it &middot; click without dragging to sever / restore &middot; pick the source drone in the sidebar</div>
+    </div>
+
+    <aside>
+      <div>
+        <div class="panel-block">
+          <h2>Network Diagnostics</h2>
+          <div class="diag-grid">
+            <div class="diag-cell gw">GATEWAY<b id="gatewayNodeVal">--</b></div>
+            <div class="diag-cell hop">ACTIVE HOPS<b id="activeHopsVal">0</b></div>
+            <div class="diag-cell pdr">PDR<b id="pdrVal">100%</b></div>
+            <div class="diag-cell lat">LATENCY<b id="latencyVal">0 ms</b></div>
+          </div>
+        </div>
+
+        <div>
+          <h3>Active Route Table</h3>
+          <div id="routingTableLog"></div>
+        </div>
+
+        <div>
+          <h3>Node Control &middot; radio = source</h3>
+          <div id="droneToggles"></div>
+        </div>
+      </div>
+
+      <button id="resetBtn">Restore All Nodes</button>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Canvas / responsive setup ----------
+  const canvas = document.getElementById('simCanvas');
+  const wrap = document.querySelector('.canvas-wrap');
+  const ctx = canvas.getContext('2d');
+  let cssW = 0, cssH = 0, dpr = Math.max(1, window.devicePixelRatio || 1);
+
+  function resizeCanvas(){
+    const newW = wrap.clientWidth, newH = wrap.clientHeight;
+    if (cssW > 0 && cssH > 0 && newW > 0 && newH > 0){
+      const rx = newW / cssW, ry = newH / cssH;
+      drones.forEach(d=>{ d.x *= rx; d.y *= ry; });
+      sat.x *= rx; sat.y = 46;
+    }
+    cssW = newW; cssH = newH;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    updateCommRange();
+  }
+
+  function updateCommRange(){
+    // Comm radius drives both routing AND the initial layout scale below,
+    // so the mesh is reliably connected regardless of window size/aspect.
+    R_COMM = Math.min(cssW, cssH) * 0.5;
+  }
+
+  // ---------- Domain model ----------
+  const CALLSIGNS = ['UAV-Alpha','UAV-Bravo','UAV-Charlie','UAV-Delta','UAV-Echo'];
+  const N = CALLSIGNS.length;
+  const V_MAX = 11;          // px/s hover-drift speed cap
+  const NOISE_ACCEL = 7;     // px/s^2 stochastic turbulence
+  const ALPHA_DEGRADE = 0.55;// channel degradation penalty factor
+  const BETA_QUEUE = 10;     // queue occupancy weight in gateway cost
+  const MARGIN = 60;
+
+  let drones = [];
+  let sat = {x:0, y:46, v: 30};
+  let R_COMM = 240;
+  let sourceId = 0; // which drone is the surveillance sensor feeding the mesh
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+
+  function seedPositions(){
+    drones = [];
+    const cx = cssW/2, cy = cssH/2 + 20;
+    // Ring layout scaled to R_COMM, kept tight so most pairs stay mutually
+    // visible: severing any one node still leaves the rest cross-linked
+    // to each other, not just chained through a single survivor.
+    const layoutR = R_COMM * 0.46;
+    for (let i=0;i<N;i++){
+      const ang = (i/N)*Math.PI*2 - Math.PI/2 + rand(-0.12,0.12);
+      const r = layoutR * rand(0.82,1.05);
+      const x = Math.min(Math.max(cx + Math.cos(ang)*r, MARGIN), cssW-MARGIN);
+      const y = Math.min(Math.max(cy + Math.sin(ang)*r, MARGIN+40), cssH-MARGIN);
+      drones.push({
+        id:i, callsign: CALLSIGNS[i],
+        x, y,
+        vx: rand(-V_MAX,V_MAX)*0.3, vy: rand(-V_MAX,V_MAX)*0.3,
+        active:true,
+        queuePhase: rand(0, Math.PI*2),
+        battery: 100,
+        justToggledAt: -999,
+      });
+    }
+    sat.x = cssW*0.15;
+  }
+
+  // ---------- Physics ----------
+  function stepPhysics(dt){
+    drones.forEach(d=>{
+      if (!d.active || d.id === dragId) return;
+      d.vx += rand(-NOISE_ACCEL,NOISE_ACCEL)*dt;
+      d.vy += rand(-NOISE_ACCEL,NOISE_ACCEL)*dt;
+      const sp = Math.hypot(d.vx,d.vy);
+      if (sp > V_MAX){ d.vx = d.vx/sp*V_MAX; d.vy = d.vy/sp*V_MAX; }
+      d.x += d.vx*dt; d.y += d.vy*dt;
+      if (d.x < MARGIN){ d.x = MARGIN; d.vx = Math.abs(d.vx); }
+      if (d.x > cssW-MARGIN){ d.x = cssW-MARGIN; d.vx = -Math.abs(d.vx); }
+      if (d.y < MARGIN+40){ d.y = MARGIN+40; d.vy = Math.abs(d.vy); }
+      if (d.y > cssH-MARGIN){ d.y = cssH-MARGIN; d.vy = -Math.abs(d.vy); }
+      d.battery = Math.max(4, d.battery - dt*0.03);
+    });
+    sat.x += sat.v*dt;
+    if (sat.x > cssW + 80) sat.x = -80;
+  }
+
+  function queueDepth(d, t){ return 2.2 + 2.2*Math.sin(t*0.7 + d.queuePhase); }
+
+  // ---------- Graph / routing ----------
+  function buildGraph(active, t){
+    const edges = {}; // id -> [{to, w, dist}]
+    active.forEach(a=>edges[a.id]=[]);
+    for (let i=0;i<active.length;i++){
+      for (let j=i+1;j<active.length;j++){
+        const u = active[i], v = active[j];
+        const dist = Math.hypot(u.x-v.x, u.y-v.y);
+        if (dist <= R_COMM){
+          const loss = dist / R_COMM; // proxy for RSSI channel degradation
+          const w = dist * (1 + ALPHA_DEGRADE*loss);
+          edges[u.id].push({to:v.id, w, dist});
+          edges[v.id].push({to:u.id, w, dist});
+        }
+      }
+    }
+    return edges;
+  }
+
+  function electGateway(active, t){
+    let best=null, bestCost=Infinity;
+    active.forEach(d=>{
+      const dSat = Math.hypot(d.x-sat.x, d.y-sat.y);
+      const cost = dSat + BETA_QUEUE*queueDepth(d,t);
+      if (cost < bestCost){ bestCost = cost; best = d; }
+    });
+    return best;
+  }
+
+  function dijkstra(edges, srcId, dstId){
+    const dist = {}, prev = {}, visited = {};
+    Object.keys(edges).forEach(k=>{ dist[k]=Infinity; prev[k]=null; });
+    dist[srcId] = 0;
+    const pq = [[0,srcId]];
+    while (pq.length){
+      pq.sort((a,b)=>a[0]-b[0]);
+      const [d,u] = pq.shift();
+      if (visited[u]) continue;
+      visited[u] = true;
+      if (u === dstId) break;
+      (edges[u]||[]).forEach(e=>{
+        const alt = d + e.w;
+        if (alt < dist[e.to]){ dist[e.to]=alt; prev[e.to]=u; pq.push([alt,e.to]); }
+      });
+    }
+    if (dist[dstId] === undefined || dist[dstId] === Infinity) return null;
+    const path = [];
+    let cur = dstId;
+    while (cur !== null && cur !== undefined){ path.unshift(cur); cur = prev[cur]; }
+    return path;
+  }
+
+  function computeRoute(t){
+    const t0 = performance.now();
+    const active = drones.filter(d=>d.active);
+    if (active.length === 0){
+      return {status:'TOTAL_COLLAPSE', path:null, gateway:null, tMs:performance.now()-t0};
+    }
+    const gateway = electGateway(active, t);
+    const src = drones.find(d=>d.id===sourceId);
+    if (!src.active){
+      return {status:'SOURCE_OFFLINE', path:null, gateway, tMs:performance.now()-t0};
+    }
+    const edges = buildGraph(active, t);
+    const path = dijkstra(edges, src.id, gateway.id);
+    if (!path){
+      return {status:'ROUTE_SEVERED', path:null, gateway, tMs:performance.now()-t0};
+    }
+    return {status:'ROUTE_VALID', path, gateway, tMs:performance.now()-t0};
+  }
+
+  // ---------- State tracking across frames ----------
+  let lastGatewayId = null;
+  let lastPathKey = '';
+  let lastStatus = '';
+  let topologyState = 'stable'; // stable | reroute | severed
+  let topologyFlashUntil = 0;
+  let convergenceMs = 0;
+  let pdrTarget = 99.5, pdrShown = 100;
+  let pdrDipUntil = 0;
+  let severedEdgeFlash = null; // {a,b,until0}
+  let lastPathIds = [];
+
+  const logEl = document.getElementById('routingTableLog');
+  const MAX_LOG = 9;
+  function logLine(text, cls){
+    const stamp = new Date().toLocaleTimeString('en-US',{hour12:false});
+    const row = document.createElement('div');
+    row.className = cls || 'log-info';
+    row.textContent = '['+stamp+'] '+text;
+    logEl.insertBefore(row, logEl.firstChild);
+    while (logEl.children.length > MAX_LOG) logEl.removeChild(logEl.lastChild);
+  }
+
+  // ---------- Packet animation ----------
+  let packet = { active:false, segIndex:0, t:0, phase:'mesh', trail:[] };
+  const PACKET_DT = 0.6; // progress units per second along a segment (tuned per-segment below)
+
+  function resetPacket(){
+    packet.segIndex = 0; packet.t = 0; packet.phase = 'mesh'; packet.trail = [];
+  }
+
+  // ---------- Interaction ----------
+  function toggleDrone(id){
+    const d = drones.find(x=>x.id===id);
+    if (!d) return;
+    d.active = !d.active;
+    d.justToggledAt = performance.now()/1000;
+    if (!d.active){
+      const idx = lastPathIds.indexOf(d.id);
+      if (idx !== -1){
+        const neighborId = idx > 0 ? lastPathIds[idx-1] : lastPathIds[idx+1];
+        const neighbor = neighborId !== undefined ? drones.find(x=>x.id===neighborId) : null;
+        if (neighbor) severedEdgeFlash = {a:neighbor, b:d, until0:performance.now()};
+      }
+      logLine('MANUAL FAULT INJECTION: '+d.callsign+' SEVERED', 'log-crit');
+    } else {
+      d.battery = Math.max(d.battery, 55);
+      logLine(d.callsign+' RESTORED — rejoining adjacency matrix', 'log-ok');
+    }
+    renderSidebarToggles();
+  }
+
+  function restoreAll(){
+    drones.forEach(d=>{ d.active = true; d.battery = Math.max(d.battery,70); });
+    logLine('OPERATOR RESET — all nodes restored to ACTIVE', 'log-ok');
+    renderSidebarToggles();
+  }
+
+  function setSource(id){
+    if (sourceId === id) return;
+    const oldD = drones.find(d=>d.id===sourceId);
+    const newD = drones.find(d=>d.id===id);
+    sourceId = id;
+    logLine('SURVEILLANCE SOURCE REASSIGNED: '+(oldD?oldD.callsign:'?')+' \u2192 '+(newD?newD.callsign:'?'), 'log-warn');
+    renderSidebarToggles();
+  }
+
+  function getCanvasPos(e){
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function hitTest(pos){
+    let hit = null, bestD = 26;
+    drones.forEach(d=>{
+      const dist = Math.hypot(d.x-pos.x, d.y-pos.y);
+      if (dist < bestD){ bestD = dist; hit = d; }
+    });
+    return hit;
+  }
+
+  // Drag to reposition a drone (and watch links form/break live); a plain
+  // click with no movement toggles that drone's fault state instead.
+  let dragId = null, dragMoved = false, dragStart = {x:0,y:0};
+  const DRAG_THRESHOLD = 4;
+
+  canvas.style.touchAction = 'none';
+
+  canvas.addEventListener('pointerdown', (e)=>{
+    const pos = getCanvasPos(e);
+    const hit = hitTest(pos);
+    if (!hit) return;
+    dragId = hit.id; dragMoved = false; dragStart = pos;
+    hit.vx = 0; hit.vy = 0;
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  canvas.addEventListener('pointermove', (e)=>{
+    const pos = getCanvasPos(e);
+    if (dragId === null){
+      canvas.style.cursor = hitTest(pos) ? 'grab' : 'crosshair';
+      return;
+    }
+    if (Math.hypot(pos.x-dragStart.x, pos.y-dragStart.y) > DRAG_THRESHOLD) dragMoved = true;
+    const d = drones.find(x=>x.id===dragId);
+    if (d){
+      d.x = Math.min(Math.max(pos.x, MARGIN), cssW-MARGIN);
+      d.y = Math.min(Math.max(pos.y, MARGIN+40), cssH-MARGIN);
+      d.vx = 0; d.vy = 0;
+    }
+    canvas.style.cursor = 'grabbing';
+  });
+
+  function endDrag(e){
+    if (dragId === null) return;
+    const id = dragId; dragId = null;
+    if (!dragMoved){
+      toggleDrone(id);
+    } else {
+      const d = drones.find(x=>x.id===id);
+      if (d){ d.vx = rand(-2,2); d.vy = rand(-2,2); }
+      logLine('MANUAL REPOSITION: '+(d?d.callsign:'node')+' relocated on canvas', 'log-info');
+    }
+    canvas.style.cursor = 'crosshair';
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', ()=>{ dragId=null; canvas.style.cursor='crosshair'; });
+
+  document.getElementById('resetBtn').addEventListener('click', restoreAll);
+
+
+  function renderSidebarToggles(){
+    const wrapEl = document.getElementById('droneToggles');
+    wrapEl.innerHTML = '';
+    drones.forEach(d=>{
+      const row = document.createElement('div');
+      row.className = 'drone-row';
+      const isGw = lastGatewayId === d.id && d.active;
+      const dotClass = !d.active ? 'offline' : (isGw ? 'gateway' : 'active');
+      const radioId = 'srcRadio'+d.id;
+      row.innerHTML =
+        '<label class="src-radio" title="Set as surveillance source" for="'+radioId+'">'+
+        '<input type="radio" id="'+radioId+'" name="srcSelect" '+(d.id===sourceId?'checked':'')+'>'+
+        '</label>'+
+        '<span class="name"><span class="dot '+dotClass+'"></span>'+d.callsign+
+        (d.id===sourceId ? ' <span style="color:#64748b;">(SRC)</span>' : '')+'</span>';
+      const radio = row.querySelector('input[type=radio]');
+      radio.addEventListener('change', ()=>setSource(d.id));
+      const btn = document.createElement('button');
+      btn.className = d.active ? 'sever' : 'restore';
+      btn.textContent = d.active ? 'Sever' : 'Restore';
+      btn.addEventListener('click', ()=>toggleDrone(d.id));
+      row.appendChild(btn);
+      wrapEl.appendChild(row);
+    });
+  }
+
+  // ---------- Rendering ----------
+  function drawGlowLine(x1,y1,x2,y2,color,glow,width,dash){
+    ctx.save();
+    ctx.setLineDash(dash||[]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.shadowColor = glow; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawSatellite(){
+    ctx.save();
+    ctx.translate(sat.x, sat.y);
+    ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 10;
+    ctx.fillStyle = '#fde68a';
+    ctx.fillRect(-6,-4,12,8);
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(-18,-2,10,4);
+    ctx.fillRect(8,-2,10,4);
+    ctx.restore();
+    // dashed orbit trail
+    ctx.save();
+    ctx.strokeStyle = 'rgba(148,163,184,0.18)';
+    ctx.setLineDash([2,6]);
+    ctx.beginPath(); ctx.moveTo(0, sat.y); ctx.lineTo(cssW, sat.y); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNode(d, isGateway, isSource){
+    const offline = !d.active;
+    const recentToggle = (performance.now()/1000 - d.justToggledAt) < 0.6;
+    ctx.save();
+    if (recentToggle){
+      const age = (performance.now()/1000 - d.justToggledAt)/0.6;
+      ctx.beginPath();
+      ctx.arc(d.x,d.y, 14 + age*26, 0, Math.PI*2);
+      ctx.strokeStyle = 'rgba(239,68,68,'+(0.55*(1-age))+')';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    const baseR = 11;
+    let fillA = '#0e7490', fillB = '#22d3ee', ring = null;
+    if (offline){ fillA = '#3f0f0f'; fillB = '#7f1d1d'; }
+    else if (isGateway){ fillA = '#7c4a06'; fillB = '#f59e0b'; ring = '#fbbf24'; }
+
+    const grad = ctx.createRadialGradient(d.x-3,d.y-3,1,d.x,d.y,baseR+4);
+    grad.addColorStop(0, fillB);
+    grad.addColorStop(1, fillA);
+
+    ctx.shadowColor = offline ? '#dc2626' : (isGateway ? '#f59e0b' : '#34d399');
+    ctx.shadowBlur = offline ? 6 : 12;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, baseR, 0, Math.PI*2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    if (ring){
+      ctx.beginPath();
+      ctx.arc(d.x,d.y, baseR+5, 0, Math.PI*2);
+      ctx.strokeStyle = ring; ctx.lineWidth = 1.4; ctx.shadowBlur = 4;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // label
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = offline ? '#f87171' : '#e6edf7';
+    const tag = isGateway ? '  [GW]' : (isSource ? '  [SRC]' : '');
+    ctx.fillText(d.callsign + tag, d.x, d.y - 18);
+    ctx.fillStyle = '#64748b';
+    ctx.font = '8.5px ui-monospace, monospace';
+    ctx.fillText((offline?'OFFLINE':'BATT '+d.battery.toFixed(0)+'%'), d.x, d.y + 26);
+    ctx.restore();
+  }
+
+  function segLen(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+  function render(route, dt){
+    ctx.clearRect(0,0,cssW,cssH);
+
+    const active = drones.filter(d=>d.active);
+    const idMap = {}; drones.forEach(d=>idMap[d.id]=d);
+    const pathIds = route.path || [];
+    const pathSet = new Set(pathIds);
+    const pathEdgeKeys = new Set();
+    for (let i=0;i<pathIds.length-1;i++){
+      pathEdgeKeys.add(pathIds[i]+'-'+pathIds[i+1]);
+      pathEdgeKeys.add(pathIds[i+1]+'-'+pathIds[i]);
+    }
+
+    drawSatellite();
+
+    // faint mesh links (all in-range pairs not on active path)
+    for (let i=0;i<active.length;i++){
+      for (let j=i+1;j<active.length;j++){
+        const u=active[i], v=active[j];
+        const dist = segLen(u,v);
+        if (dist <= R_COMM && !pathEdgeKeys.has(u.id+'-'+v.id)){
+          drawGlowLine(u.x,u.y,v.x,v.y,'rgba(34,211,238,0.12)','rgba(34,211,238,0.0)',1,[4,5]);
+        }
+      }
+    }
+
+    // recently severed edge — red pulse fade
+    if (severedEdgeFlash){
+      const age = (performance.now() - severedEdgeFlash.until0) / 550;
+      if (age < 1 && severedEdgeFlash.a && severedEdgeFlash.b){
+        const alpha = Math.max(0, 1-age);
+        drawGlowLine(severedEdgeFlash.a.x, severedEdgeFlash.a.y,
+                     severedEdgeFlash.b.x, severedEdgeFlash.b.y,
+                     'rgba(239,68,68,'+alpha+')', '#dc2626', 2.4, [5,3]);
+      } else { severedEdgeFlash = null; }
+    }
+
+    // active shortest path — neon green glow
+    for (let i=0;i<pathIds.length-1;i++){
+      const u = idMap[pathIds[i]], v = idMap[pathIds[i+1]];
+      drawGlowLine(u.x,u.y,v.x,v.y,'#10b981','#34d399',3,[]);
+    }
+
+    // satellite uplink beam from gateway
+    if (route.gateway && route.gateway.active){
+      const gw = idMap[route.gateway.id];
+      drawGlowLine(gw.x, gw.y, sat.x, sat.y, '#f59e0b', '#f59e0b', 2, [6,3]);
+    }
+
+    // nodes
+    drones.forEach(d=>{
+      const isGw = route.gateway && route.gateway.id === d.id && d.active;
+      drawNode(d, isGw, d.id === sourceId);
+    });
+
+    // packet particle
+    drawPacket(route, idMap, dt);
+  }
+
+  function drawPacket(route, idMap, dt){
+    if (route.status !== 'ROUTE_VALID' || !route.path || route.path.length < 1){
+      packet.active = false; return;
+    }
+    packet.active = true;
+    const path = route.path;
+
+    let pos = null;
+    if (packet.phase === 'mesh'){
+      if (path.length === 1){
+        packet.phase = 'uplink'; packet.t = 0;
+      } else {
+        const a = idMap[path[packet.segIndex]], b = idMap[path[packet.segIndex+1]];
+        if (!a || !b){ resetPacket(); return; }
+        const len = Math.max(20, segLen(a,b));
+        packet.t += dt * (90/len); // speed ~90px/s normalized to progress units
+        if (packet.t >= 1){
+          packet.t = 0; packet.segIndex++;
+          if (packet.segIndex >= path.length-1){ packet.phase = 'uplink'; }
+        }
+        const aa = idMap[path[packet.segIndex]], bb = idMap[path[Math.min(packet.segIndex+1,path.length-1)]];
+        pos = { x: aa.x + (bb.x-aa.x)*packet.t, y: aa.y + (bb.y-aa.y)*packet.t, color:'#6ee7b7' };
+      }
+    }
+    if (packet.phase === 'uplink'){
+      const gwNode = idMap[path[path.length-1]];
+      if (!gwNode){ resetPacket(); return; }
+      const len = Math.max(20, Math.hypot(gwNode.x-sat.x, gwNode.y-sat.y));
+      packet.t += dt * (140/len);
+      if (packet.t >= 1){ resetPacket(); return; }
+      pos = { x: gwNode.x + (sat.x-gwNode.x)*packet.t, y: gwNode.y + (sat.y-gwNode.y)*packet.t, color:'#fcd34d' };
+    }
+    if (!pos) return;
+
+    packet.trail.push({x:pos.x,y:pos.y,c:pos.color});
+    if (packet.trail.length > 7) packet.trail.shift();
+
+    ctx.save();
+    packet.trail.forEach((p,i)=>{
+      const a = (i+1)/packet.trail.length;
+      ctx.beginPath();
+      ctx.fillStyle = p.c;
+      ctx.globalAlpha = 0.12 + a*0.55;
+      ctx.shadowColor = p.c; ctx.shadowBlur = 8;
+      ctx.arc(p.x,p.y, 2 + a*2.6, 0, Math.PI*2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  // ---------- HUD updates ----------
+  const gatewayEl = document.getElementById('gatewayNodeVal');
+  const hopsEl = document.getElementById('activeHopsVal');
+  const pdrEl = document.getElementById('pdrVal');
+  const latEl = document.getElementById('latencyVal');
+  const topoEl = document.getElementById('topoStatus');
+  const convEl = document.getElementById('convergenceTime');
+
+  function updateHud(route, now){
+    gatewayEl.textContent = (route.gateway && route.status !== 'TOTAL_COLLAPSE') ? route.gateway.callsign : '--';
+    const hops = route.path ? (route.path.length - 1) : 0;
+    hopsEl.textContent = route.status === 'ROUTE_VALID' ? hops : '0';
+
+    if (now < pdrDipUntil){
+      pdrShown += (pdrTarget - pdrShown) * 0.15;
+    } else {
+      pdrTarget = route.status === 'ROUTE_VALID' ? rand(97.8,100) : (route.status==='TOTAL_COLLAPSE'||route.status==='ROUTE_SEVERED' ? 0 : rand(40,60));
+      pdrShown += (pdrTarget - pdrShown) * 0.06;
+    }
+    pdrEl.textContent = Math.max(0,pdrShown).toFixed(0)+'%';
+
+    latEl.textContent = convergenceMs.toFixed(1)+' ms';
+    convEl.textContent = 'FAILOVER LATENCY: '+convergenceMs.toFixed(1)+' ms';
+
+    let label = 'TOPOLOGY: STABLE', cls='stable';
+    if (route.status === 'TOTAL_COLLAPSE'){ label='TOPOLOGY: TOTAL COLLAPSE'; cls='severed'; }
+    else if (route.status === 'ROUTE_SEVERED'){ label='TOPOLOGY: ROUTE SEVERED'; cls='severed'; }
+    else if (route.status === 'SOURCE_OFFLINE'){ label='TOPOLOGY: SOURCE OFFLINE'; cls='reroute'; }
+    else if (performance.now() < topologyFlashUntil){ label='TOPOLOGY: REROUTING…'; cls='reroute'; }
+    topoEl.textContent = label;
+    topoEl.className = cls;
+  }
+
+  // ---------- Main loop ----------
+  let lastTime = performance.now();
+  let simT = 0;
+
+  function frame(now){
+    const dt = Math.min(0.05, (now - lastTime)/1000);
+    lastTime = now;
+    simT += dt;
+
+    stepPhysics(dt);
+    const route = computeRoute(simT);
+
+    // detect topology-affecting changes for logging + convergence timing
+    const pathKey = route.path ? route.path.join('>') : ('none:'+route.status);
+    const gwId = route.gateway ? route.gateway.id : null;
+
+    if (gwId !== lastGatewayId && lastGatewayId !== null && gwId !== null){
+      logLine('GATEWAY HANDOFF: '+(drones.find(d=>d.id===lastGatewayId)||{}).callsign+' \u2192 '+route.gateway.callsign, 'log-warn');
+      convergenceMs = rand(4,14);
+      topologyFlashUntil = performance.now()+700;
+    }
+    if (pathKey !== lastPathKey && lastStatus === 'ROUTE_VALID'){
+      if (route.status === 'ROUTE_VALID' && route.path.length>1){
+        const names = route.path.map(id=>drones.find(d=>d.id===id).callsign.replace('UAV-','')).join(' \u2192 ');
+        logLine('ROUTE RECOMPUTED: '+names+' \u2192 SAT ('+(route.path.length-1)+' hops)', 'log-ok');
+      }
+      convergenceMs = rand(3,14);
+      topologyFlashUntil = performance.now()+700;
+      pdrDipUntil = performance.now()+900;
+      pdrTarget = rand(88,95);
+    }
+    if (route.status !== lastStatus){
+      if (route.status === 'ROUTE_SEVERED') logLine('ROUTE SEVERED: mesh disconnected from gateway', 'log-crit');
+      if (route.status === 'TOTAL_COLLAPSE') logLine('TOTAL COLLAPSE: no active nodes remain', 'log-crit');
+      if (route.status === 'SOURCE_OFFLINE') logLine('SOURCE SENSOR OFFLINE — standby heartbeat only', 'log-warn');
+      pdrDipUntil = performance.now()+900;
+    }
+    lastPathKey = pathKey; lastStatus = route.status; lastGatewayId = gwId;
+    if (route.status === 'ROUTE_VALID') lastPathIds = route.path.slice();
+
+    render(route, dt);
+    updateHud(route, performance.now());
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Boot ----------
+  function boot(){
+    resizeCanvas();
+    seedPositions();
+    renderSidebarToggles();
+    logLine('SWARM INITIALIZED — 5 UAV nodes online, mesh converging', 'log-info');
+    requestAnimationFrame(frame);
+  }
+  window.addEventListener('resize', resizeCanvas);
+  boot();
+})();
+</script>
+</body>
+</html>
