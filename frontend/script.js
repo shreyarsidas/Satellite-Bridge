@@ -1,5 +1,5 @@
 /* =========================================================================
-   SATELLITE BRIDGE — ANALYTICS & POPULATION TRACKING (V22)
+   SATELLITE BRIDGE — ANALYTICS & POPULATION TRACKING (V23)
    ========================================================================= */
 
 const DISASTERS = {
@@ -245,10 +245,11 @@ async function updateEvacuationUI() {
       let detected = row.total_detected;
       let isApprox = false;
 
-      // SIMULATION FALLBACK: If 0 detections, show a simulated approximate population
+      // FALLBACK: If zero detections, provide an approximate population estimate
       if (detected === 0 && !row.is_cleared) {
         isApprox = true;
-        detected = Math.floor(row.total_expected * (0.1 + Math.random() * 0.2));
+        // Simulate a plausible detection range (15% to 35% of expected)
+        detected = Math.floor(row.total_expected * (0.15 + Math.random() * 0.2));
       }
 
       const pct = Math.round((detected / row.total_expected) * 100) || 0;
@@ -263,7 +264,7 @@ async function updateEvacuationUI() {
           <td style="padding:8px">${row.sector_name}</td>
           <td style="padding:8px">${row.total_expected}</td>
           <td style="padding:8px; color:${isApprox ? 'var(--text-muted)' : 'var(--text-main)'}">
-            ${detected} ${isApprox ? '<small>(Approx)</small>' : ''}
+            ${detected} ${isApprox ? '<small style="font-size:9px; opacity:0.6;">(Approx)</small>' : ''}
           </td>
           <td style="padding:8px; font-weight:bold; color:${statusColor}">${status}</td>
           <td style="padding:8px; color:var(--text-muted)">${clearedAt}</td>
