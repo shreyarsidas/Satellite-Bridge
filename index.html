@@ -78,12 +78,26 @@
         <button class="tab-btn active" data-tab="feed">Event Feed</button>
         <button class="tab-btn" data-tab="history">Mission History</button>
         <button class="tab-btn" data-tab="analytics">Analytics</button>
+        <button class="tab-btn" data-tab="evacuation">Evacuation Status</button>
       </div>
       <div id="tab-feed" class="tab-panel active"></div>
       <div id="tab-history" class="tab-panel"></div>
       <div id="tab-analytics" class="tab-panel">
         <canvas id="battery-chart" width="600" height="100" style="width:100%; height:100px;"></canvas>
         <div id="analytics-stats" style="margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:10px;"></div>
+      </div>
+      <div id="tab-evacuation" class="tab-panel">
+        <table id="evac-table" style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:12px;">
+          <thead>
+            <tr style="text-align:left; color:var(--text-muted); border-bottom:1px solid var(--border-color);">
+              <th style="padding:8px">SECTOR</th>
+              <th style="padding:8px">EXPECTED</th>
+              <th style="padding:8px">DETECTED</th>
+              <th style="padding:8px">STATUS</th>
+            </tr>
+          </thead>
+          <tbody id="evac-body"></tbody>
+        </table>
       </div>
     </div>
   </div>
